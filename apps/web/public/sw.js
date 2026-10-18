@@ -1,9 +1,9 @@
-/* Service worker de FORMA: por ahora sólo notificaciones push (el modo sin conexión llega en otra fase). */
+/* Service worker de Ordo: por ahora sólo notificaciones push (el modo sin conexión llega en otra fase). */
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'FORMA', body: '', url: '/' };
+  let data = { title: 'Ordo', body: '', url: '/' };
   try {
     data = { ...data, ...event.data.json() };
   } catch {

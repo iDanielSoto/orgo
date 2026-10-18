@@ -233,3 +233,81 @@ export const deleteAccountSchema = z.object({
   password: z.string().min(1),
   confirm: z.literal('ELIMINAR'),
 });
+
+// --- Finanzas (importes en centavos enteros) ------------------------------------
+
+const cents = z.number().int('Usa centavos enteros').min(1, 'El importe debe ser mayor a 0').max(100_000_000_00);
+const bucketSchema = z.enum(['SAVINGS', 'FIXED', 'FUN', 'NONE']);
+const bp = z.number().int().min(0).max(10000);
+
+export const accountCreateSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1, 'Ponle nombre a la cuenta').max(60),
+  type: z.enum(['CASH', 'BANK', 'DEBIT', 'SAVINGS', 'WALLET', 'CREDIT']),
+  openingBalanceCents: z.number().int().min(-100_000_000_00).max(100_000_000_00),
+  openedOn: dateKeySchema,
+});
+export const accountUpdateSchema = z.object({ name: z.string().trim().min(1).max(60), archived: z.boolean() }).partial();
+
+const splitOverride = z
+  .object({ savingsBp: bp, fixedBp: bp, funBp: bp })
+  .refine((s) => s.savingsBp + s.fixedBp + s.funBp === 10000, 'Los porcentajes deben sumar 100 %');
+
+export const incomeCreateSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1, 'Ponle nombre al ingreso').max(80),
+  amountCents: cents.nullable(),
+  type: z.enum(['SALARY', 'SCHOLARSHIP', 'PRIZE', 'SALE', 'FREELANCE', 'GIFT', 'REFUND', 'OTHER']),
+  frequency: z.enum(['ONCE', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).default('ONCE'),
+  status: z.enum(['PLANNED', 'RECEIVED', 'CANCELLED']),
+  expectedOn: dateKeySchema.nullable().optional(),
+  receivedOn: dateKeySchema.nullable().optional(),
+  accountId: uuidSchema.nullable().optional(),
+  split: splitOverride.nullable().optional(),
+  notes: optionalText(300),
+});
+export const incomeUpdateSchema = incomeCreateSchema.omit({ id: true }).partial();
+
+export const transactionCreateSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(['EXPENSE', 'TRANSFER', 'ADJUSTMENT']),
+    amountCents: cents,
+    date: dateKeySchema,
+    concept: z.string().trim().min(1, 'Escribe un concepto').max(120),
+    accountId: uuidSchema.nullable().optional(),
+    toAccountId: uuidSchema.nullable().optional(),
+    categoryId: uuidSchema.nullable().optional(),
+    bucket: bucketSchema.default('NONE'),
+    notes: optionalText(300),
+  })
+  .refine((t) => t.kind !== 'TRANSFER' || (t.accountId && t.toAccountId && t.accountId !== t.toAccountId), {
+    message: 'Una transferencia necesita dos cuentas distintas',
+    path: ['toAccountId'],
+  })
+  .refine((t) => t.kind !== 'ADJUSTMENT' || Boolean(t.accountId) !== Boolean(t.toAccountId), {
+    message: 'Un ajuste va a una sola cuenta',
+    path: ['accountId'],
+  });
+export const transactionUpdateSchema = z
+  .object({
+    amountCents: cents,
+    date: dateKeySchema,
+    concept: z.string().trim().min(1).max(120),
+    accountId: uuidSchema.nullable(),
+    toAccountId: uuidSchema.nullable(),
+    categoryId: uuidSchema.nullable(),
+    bucket: bucketSchema,
+    notes: optionalText(300),
+  })
+  .partial();
+
+export const budgetRuleSchema = splitOverride.and(z.object({ effectiveFrom: dateKeySchema }));
+export const budgetTransferSchema = z.object({
+  id: uuidSchema,
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  fromBucket: bucketSchema,
+  toBucket: bucketSchema,
+  amountCents: cents,
+  note: optionalText(200),
+});

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { toDateKey } from '@forma/core';
 import { createApp } from './app';
 import { prisma } from './db';
+import { financeWorkbook } from './services/finance-import.fixture';
 import { runReminderTick } from './services/push';
 
 const app = createApp();
@@ -230,6 +231,151 @@ describe('notificaciones push', () => {
     await runReminderTick(now);
     const logs = await prisma.notificationLog.findMany({ where: { userId: user.id, kind: 'TRAINING' } });
     expect(logs).toHaveLength(1);
+  });
+});
+
+describe('finanzas', () => {
+  const post = (agent: ReturnType<typeof request.agent>, url: string, body: object) => agent.post(url).set('Origin', ORIGIN).send(body);
+  const bank = randomUUID();
+  const savings = randomUUID();
+
+  it('crea cuentas sin inventar saldos y categorías iniciales', async () => {
+    await post(a, '/api/finance/accounts', { id: bank, name: 'BBVA', type: 'DEBIT', openingBalanceCents: 50000, openedOn: '2026-10-01' }).expect(201);
+    await post(a, '/api/finance/accounts', { id: bank, name: 'BBVA', type: 'DEBIT', openingBalanceCents: 50000, openedOn: '2026-10-01' }).expect(200); // reintento
+    await post(a, '/api/finance/accounts', { id: savings, name: 'Ahorro', type: 'SAVINGS', openingBalanceCents: 0, openedOn: '2026-10-01' }).expect(201);
+    const cats = await a.get('/api/finance/categories').expect(200);
+    expect(cats.body.map((c: { name: string }) => c.name)).toContain('Pareja');
+  });
+
+  it('un ingreso recibido se distribuye 70/20/10 y entra a la cuenta; uno previsto no', async () => {
+    const r = await post(a, '/api/finance/incomes', { id: randomUUID(), name: 'Sueldo 9 oct', amountCents: 210000, type: 'SALARY', status: 'RECEIVED', receivedOn: '2026-10-09', accountId: bank }).expect(201);
+    expect(r.body.alloc).toEqual({ SAVINGS: 147000, FIXED: 42000, FUN: 21000 });
+    await post(a, '/api/finance/incomes', { id: randomUUID(), name: 'Sueldo 23 oct', amountCents: null, type: 'SALARY', status: 'PLANNED', expectedOn: '2026-10-23' }).expect(201);
+    await post(a, '/api/finance/incomes', { id: randomUUID(), name: 'Sin fecha', amountCents: 1000, type: 'OTHER', status: 'RECEIVED' }).expect(400);
+    const s = await a.get('/api/finance/summary?month=2026-10').expect(200);
+    expect(s.body.receivedCents).toBe(210000);
+    expect(s.body.expectedUnknown).toBe(1);
+    expect(s.body.availableRealCents).toBe(50000 + 210000);
+    expect(s.body.buckets.FUN.assigned).toBe(21000);
+  });
+
+  it('un gasto descuenta de su presupuesto y de su cuenta una sola vez', async () => {
+    const cats = await a.get('/api/finance/categories').expect(200);
+    const food = cats.body.find((c: { name: string }) => c.name === 'Alimentación').id;
+    const id = randomUUID();
+    const body = { id, kind: 'EXPENSE', amountCents: 12000, date: '2026-10-13', concept: 'Tacos', accountId: bank, categoryId: food, bucket: 'FUN' };
+    await post(a, '/api/finance/transactions', body).expect(201);
+    await post(a, '/api/finance/transactions', body).expect(200);
+    const s = await a.get('/api/finance/summary?month=2026-10').expect(200);
+    expect(s.body.buckets.FUN).toMatchObject({ used: 12000, remaining: 9000 });
+    expect(s.body.spentCents).toBe(12000);
+    expect(s.body.availableRealCents).toBe(50000 + 210000 - 12000);
+  });
+
+  it('separar ahorro es una transferencia: no cambia el dinero total', async () => {
+    await post(a, '/api/finance/transactions', { id: randomUUID(), kind: 'TRANSFER', amountCents: 147000, date: '2026-10-10', concept: 'Ahorro del sueldo', accountId: bank, toAccountId: savings }).expect(201);
+    await post(a, '/api/finance/transactions', { id: randomUUID(), kind: 'TRANSFER', amountCents: 100, date: '2026-10-10', concept: 'x', accountId: bank, toAccountId: bank }).expect(400);
+    const s = await a.get('/api/finance/summary?month=2026-10').expect(200);
+    expect(s.body.savingsSeparatedCents).toBe(147000);
+    expect(s.body.availableRealCents).toBe(50000 + 210000 - 12000);
+    expect(s.body.spentCents).toBe(12000);
+  });
+
+  it('cambiar porcentajes desde una fecha no altera ingresos ya recibidos', async () => {
+    await a.put('/api/finance/rule').set('Origin', ORIGIN).send({ savingsBp: 5000, fixedBp: 3000, funBp: 2000, effectiveFrom: '2026-11-01' }).expect(201);
+    await a.put('/api/finance/rule').set('Origin', ORIGIN).send({ savingsBp: 5000, fixedBp: 3000, funBp: 1000, effectiveFrom: '2026-11-01' }).expect(400);
+    const nov = await post(a, '/api/finance/incomes', { id: randomUUID(), name: 'Beca', amountCents: 450000, type: 'SCHOLARSHIP', status: 'RECEIVED', receivedOn: '2026-11-05', accountId: bank }).expect(201);
+    expect(nov.body.alloc).toEqual({ SAVINGS: 225000, FIXED: 135000, FUN: 90000 });
+    const s = await a.get('/api/finance/summary?month=2026-10').expect(200);
+    expect(s.body.buckets.SAVINGS.assigned).toBe(147000);
+  });
+
+  it('aislamiento: otro usuario no ve ni usa mis cuentas', async () => {
+    const other = await agentFor('c@forma.test');
+    await post(other, '/api/finance/transactions', { id: randomUUID(), kind: 'EXPENSE', amountCents: 100, date: '2026-10-13', concept: 'x', accountId: bank, bucket: 'FUN' }).expect(400);
+    const accs = await other.get('/api/finance/accounts').expect(200);
+    expect(accs.body).toHaveLength(0);
+    const tx = await other.get('/api/finance/transactions').expect(200);
+    expect(tx.body).toHaveLength(0);
+  });
+
+  it('no se borra una cuenta con movimientos', async () => {
+    await a.delete(`/api/finance/accounts/${bank}`).set('Origin', ORIGIN).expect(409);
+  });
+});
+
+describe('importar Excel de finanzas', () => {
+  const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  type PreviewRow = { rowHash: string; kind: string; name: string; cellRef: string; amountCents: number | null; date: string | null; status: string | null; issues: string[]; alreadyImported: boolean; categoryId: string | null };
+  let imp: ReturnType<typeof request.agent>;
+  let file: Buffer;
+  const account = randomUUID();
+  const day1 = `${TODAY.slice(0, 7)}-01`;
+
+  const preview = () => imp.post('/api/finance/import/preview').set('Origin', ORIGIN).attach('file', file, { filename: 'finanzas.xlsx', contentType: XLSX });
+  const confirm = (decisions: object[]) =>
+    imp.post('/api/finance/import/confirm').set('Origin', ORIGIN).field('decisions', JSON.stringify(decisions)).attach('file', file, { filename: 'finanzas.xlsx', contentType: XLSX });
+  const counts = async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: 'import@forma.test' } });
+    return { incomes: await prisma.income.count({ where: { userId: user.id } }), txs: await prisma.transaction.count({ where: { userId: user.id } }) };
+  };
+  const decide = (rows: PreviewRow[]) =>
+    rows.map((r) => ({ rowHash: r.rowHash, include: true, date: r.date ?? day1, accountId: r.status === 'RECEIVED' ? account : null, categoryId: r.categoryId }));
+
+  beforeAll(async () => {
+    imp = await agentFor('import@forma.test');
+    file = await financeWorkbook(TODAY);
+    await imp.post('/api/finance/accounts').set('Origin', ORIGIN).send({ id: account, name: 'Nu', type: 'DEBIT', openingBalanceCents: 0, openedOn: day1 }).expect(201);
+  });
+
+  it('la vista previa muestra las filas capturadas, sin fórmulas, y no crea nada', async () => {
+    const res = await preview().expect(200);
+    const rows: PreviewRow[] = res.body.rows;
+    expect(rows).toHaveLength(8);
+    expect(rows.some((r) => /^[EFGL]\d+$|^B25$/.test(r.cellRef))).toBe(false);
+    expect(rows.find((r) => r.name === 'Premio Hacka')!.issues).toContain('NO_DATE');
+    expect(rows.find((r) => r.name === 'Deudas')!.issues).toContain('NO_DATE');
+    const noAmount = rows.find((r) => r.amountCents === null)!;
+    expect(noAmount).toMatchObject({ kind: 'INCOME', status: 'PLANNED' });
+    expect(rows.find((r) => r.name === 'Beca Santander')!.status).toBe('PLANNED'); // mes futuro
+    expect(rows.find((r) => r.name === 'Hamburguesas')!.categoryId).toBeTruthy();
+    expect(await counts()).toEqual({ incomes: 0, txs: 0 });
+  });
+
+  it('un ingreso recibido sin cuenta destino no se importa (y no deja nada a medias)', async () => {
+    const rows: PreviewRow[] = (await preview()).body.rows;
+    const decisions = decide(rows).map((d) => ({ ...d, accountId: null }));
+    await confirm(decisions).expect(400);
+    expect(await counts()).toEqual({ incomes: 0, txs: 0 });
+    await imp.post('/api/finance/import/confirm').set('Origin', ORIGIN).field('decisions', JSON.stringify([])).attach('file', file, { filename: 'finanzas.xlsx', contentType: XLSX }).expect(400);
+  });
+
+  it('confirma, y una segunda importación no duplica nada', async () => {
+    const rows: PreviewRow[] = (await preview()).body.rows;
+    const first = await confirm(decide(rows)).expect(201);
+    expect(first.body).toMatchObject({ incomes: 4, expenses: 4, skipped: 0 });
+    const after = await counts();
+    // 4 gastos + 2 ingresos recibidos con su movimiento; el previsto sin importe no mueve dinero.
+    expect(after).toEqual({ incomes: 4, txs: 6 });
+    const unknown = await prisma.income.findFirstOrThrow({ where: { importRowId: { not: null }, amountCents: null } });
+    expect(unknown.status).toBe('PLANNED');
+
+    const again = await preview().expect(200);
+    expect(again.body.rows.every((r: PreviewRow) => r.alreadyImported)).toBe(true);
+    const second = await confirm(decide(again.body.rows)).expect(200);
+    expect(second.body).toMatchObject({ batchId: null, incomes: 0, expenses: 0, skipped: 8 });
+    expect(await counts()).toEqual(after);
+  });
+
+  it('el ahorro sale de la distribución de los ingresos, no de las fórmulas', async () => {
+    const s = await imp.get(`/api/finance/summary?month=${TODAY.slice(0, 7)}`).expect(200);
+    expect(s.body.receivedCents).toBe(433333 + 210000);
+    expect(s.body.savingsSeparatedCents).toBe(0);
+    const incomes = await imp.get('/api/finance/incomes').expect(200);
+    const savings = incomes.body.reduce((t: number, i: { alloc: { SAVINGS: number } | null }) => t + (i.alloc?.SAVINGS ?? 0), 0);
+    expect(s.body.buckets.SAVINGS.assigned).toBe(savings);
+    const transfers = await imp.get('/api/finance/transactions?kind=TRANSFER').expect(200);
+    expect(transfers.body).toHaveLength(0);
   });
 });
 

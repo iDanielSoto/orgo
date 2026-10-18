@@ -29,7 +29,15 @@ accountRouter.get('/account/export', async (req, res) => {
       prisma.weeklyReview.findMany({ where }),
       prisma.notificationPreference.findMany({ where }),
     ]);
-  res.setHeader('Content-Disposition', `attachment; filename="forma-export-${new Date().toISOString().slice(0, 10)}.json"`);
+  const [finAccounts, finIncomes, finTransactions, finRules, finBudgetTransfers, finCategories] = await Promise.all([
+    prisma.financialAccount.findMany({ where }),
+    prisma.income.findMany({ where }),
+    prisma.transaction.findMany({ where, orderBy: { localDate: 'asc' } }),
+    prisma.budgetRule.findMany({ where }),
+    prisma.budgetTransfer.findMany({ where }),
+    prisma.financeCategory.findMany({ where }),
+  ]);
+  res.setHeader('Content-Disposition', `attachment; filename="ordo-export-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json({
     exportedAt: new Date().toISOString(),
     units: { weight: 'kg', length: 'cm', volume: 'ml', energy: 'kcal', duration: 'min' },
@@ -49,6 +57,15 @@ accountRouter.get('/account/export', async (req, res) => {
     habitCompletions: completions,
     weeklyReviews: reviews,
     notificationPreferences: notifications,
+    finance: {
+      currency: 'MXN (importes en centavos)',
+      accounts: finAccounts,
+      incomes: finIncomes,
+      transactions: finTransactions,
+      budgetRules: finRules,
+      budgetTransfers: finBudgetTransfers,
+      categories: finCategories,
+    },
   });
 });
 

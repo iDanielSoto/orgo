@@ -4,12 +4,19 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { Toaster } from 'sonner';
+import { FinanceProvider } from '@/components/forms/finance-log';
 import { LogProvider } from '@/components/forms/log';
 import { AppShell } from '@/components/layout/app-shell';
 import { ApiError } from '@/lib/api';
 import { keys, useMe } from '@/lib/queries';
 import { ActivityPage } from '@/pages/activity';
 import { BodyPage } from '@/pages/body';
+import { AccountsPage } from '@/pages/finance/accounts';
+import { BudgetRulePage } from '@/pages/finance/budget';
+import { FinanceHomePage } from '@/pages/finance/home';
+import { ImportPage } from '@/pages/finance/import';
+import { MovementsPage } from '@/pages/finance/movements';
+import { HomePage } from '@/pages/home';
 import { HabitsPage } from '@/pages/habits';
 import { LoginPage } from '@/pages/login';
 import { ProfilePage } from '@/pages/profile';
@@ -51,21 +58,33 @@ function App() {
   return (
     <BrowserRouter>
       <LogProvider>
+        <FinanceProvider>
         <Routes>
           <Route path="/entrar" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
             <Route path="/configurar" element={<ProfileSetupPage />} />
             <Route element={<AppShell />}>
-              <Route index element={<TodayPage />} />
-              <Route path="cuerpo" element={<BodyPage />} />
-              <Route path="habitos" element={<HabitsPage />} />
-              <Route path="actividad" element={<ActivityPage />} />
+              <Route index element={<HomePage />} />
+              <Route path="salud" element={<TodayPage />} />
+              <Route path="salud/cuerpo" element={<BodyPage />} />
+              <Route path="salud/habitos" element={<HabitsPage />} />
+              <Route path="salud/actividad" element={<ActivityPage />} />
+              <Route path="finanzas" element={<FinanceHomePage />} />
+              <Route path="finanzas/movimientos" element={<MovementsPage />} />
+              <Route path="finanzas/cuentas" element={<AccountsPage />} />
+              <Route path="finanzas/presupuesto" element={<BudgetRulePage />} />
+              <Route path="finanzas/importar" element={<ImportPage />} />
               <Route path="perfil" element={<ProfilePage />} />
               <Route path="ajustes" element={<SettingsPage />} />
+              {/* Rutas anteriores (avisos ya enviados) */}
+              <Route path="cuerpo" element={<Navigate to="/salud/cuerpo" replace />} />
+              <Route path="habitos" element={<Navigate to="/salud/habitos" replace />} />
+              <Route path="actividad" element={<Navigate to="/salud/actividad" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Route>
         </Routes>
+        </FinanceProvider>
       </LogProvider>
     </BrowserRouter>
   );

@@ -38,6 +38,13 @@ model User {
   notificationPreferences NotificationPreference[]
   pushSubscriptions       PushSubscription[]
   notificationLogs        NotificationLog[]
+  financialAccounts       FinancialAccount[]
+  financeCategories       FinanceCategory[]
+  budgetRules             BudgetRule[]
+  incomes                 Income[]
+  transactions            Transaction[]
+  budgetTransfers         BudgetTransfer[]
+  importBatches           ImportBatch[]
   goals                   Goal[]
   measurements            BodyMeasurement[]
   progressPhotos          ProgressPhoto[]
@@ -652,4 +659,217 @@ model WeeklyReview {
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, weekNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Finanzas
+//
+// Dinero en CENTAVOS enteros (MXN) para evitar errores de punto flotante.
+// Porcentajes en puntos base (10000 = 100 %).
+// El saldo de una cuenta nunca se guarda: es saldo inicial + movimientos (libro mayor).
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  CASH
+  BANK
+  DEBIT
+  SAVINGS
+  WALLET
+  CREDIT
+}
+
+model FinancialAccount {
+  id                  String      @id @db.Uuid
+  userId              String      @db.Uuid
+  name                String
+  type                AccountType
+  /// Saldo con el que se dio de alta (lo captura el usuario; puede ser negativo en crédito).
+  openingBalanceCents Int         @default(0)
+  openedOn            DateTime    @db.Date
+  archivedAt          DateTime?   @db.Timestamptz(3)
+  createdAt           DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @db.Timestamptz(3)
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outgoing            Transaction[] @relation("fromAccount")
+  incoming            Transaction[] @relation("toAccount")
+  incomes             Income[]
+
+  @@index([userId])
+}
+
+/// Presupuesto de origen (70/20/10).
+enum BudgetBucket {
+  SAVINGS
+  FIXED
+  FUN
+  NONE
+}
+
+model FinanceCategory {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @db.Uuid
+  name          String
+  /// Presupuesto sugerido al elegirla (el usuario puede cambiarlo en cada gasto).
+  defaultBucket BudgetBucket  @default(FIXED)
+  sortOrder     Int           @default(0)
+  archivedAt    DateTime?     @db.Timestamptz(3)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+
+  @@unique([userId, name])
+}
+
+/// Regla de distribución vigente desde una fecha. Cambiarla no altera ingresos anteriores.
+model BudgetRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  savingsBp     Int
+  fixedBp       Int
+  funBp         Int
+  effectiveFrom DateTime @db.Date
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, effectiveFrom])
+}
+
+enum IncomeType {
+  SALARY
+  SCHOLARSHIP
+  PRIZE
+  SALE
+  FREELANCE
+  GIFT
+  REFUND
+  OTHER
+}
+
+enum IncomeStatus {
+  PLANNED
+  RECEIVED
+  CANCELLED
+}
+
+enum Frequency {
+  ONCE
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+/// Ingreso previsto o recibido. Al recibirse se fija su distribución (snapshot) y se crea
+/// el movimiento INCOME en la cuenta de destino.
+model Income {
+  id                 String       @id @db.Uuid
+  userId             String       @db.Uuid
+  name               String
+  /// null = importe aún desconocido (p. ej. sueldo futuro sin cantidad).
+  amountCents        Int?
+  type               IncomeType   @default(OTHER)
+  frequency          Frequency    @default(ONCE)
+  status             IncomeStatus @default(PLANNED)
+  expectedOn         DateTime?    @db.Date
+  receivedOn         DateTime?    @db.Date
+  accountId          String?      @db.Uuid
+  /// Porcentajes propios de este ingreso (si no, la regla vigente al recibirlo).
+  savingsBpOverride  Int?
+  fixedBpOverride    Int?
+  funBpOverride      Int?
+  /// Distribución fijada al recibirlo (suma exacta = amountCents).
+  allocSavingsCents  Int?
+  allocFixedCents    Int?
+  allocFunCents      Int?
+  notes              String?
+  importRowId        String?      @unique @db.Uuid
+  createdAt          DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(3)
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account            FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  transaction        Transaction?
+
+  @@index([userId, status])
+  @@index([userId, receivedOn])
+}
+
+enum TransactionKind {
+  INCOME
+  EXPENSE
+  TRANSFER
+  ADJUSTMENT
+}
+
+/// Libro de movimientos de dinero real. Todo importe es positivo; el tipo y las cuentas
+/// definen el sentido. Las transferencias no son ingresos ni gastos.
+model Transaction {
+  id            String          @id @db.Uuid
+  userId        String          @db.Uuid
+  kind          TransactionKind
+  amountCents   Int
+  occurredAt    DateTime        @db.Timestamptz(3)
+  localDate     DateTime        @db.Date
+  /// Cuenta de la que sale el dinero (gasto, transferencia, ajuste negativo).
+  accountId     String?         @db.Uuid
+  /// Cuenta a la que entra (ingreso, transferencia, ajuste positivo).
+  toAccountId   String?         @db.Uuid
+  concept       String
+  categoryId    String?         @db.Uuid
+  bucket        BudgetBucket    @default(NONE)
+  incomeId      String?         @unique @db.Uuid
+  notes         String?
+  importRowId   String?         @unique @db.Uuid
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @db.Timestamptz(3)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account       FinancialAccount? @relation("fromAccount", fields: [accountId], references: [id], onDelete: NoAction)
+  toAccount     FinancialAccount? @relation("toAccount", fields: [toAccountId], references: [id], onDelete: NoAction)
+  category      FinanceCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  income        Income?           @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+  @@index([accountId])
+  @@index([toAccountId])
+}
+
+/// Mover presupuesto entre categorías de un mes. No es dinero nuevo ni un gasto.
+model BudgetTransfer {
+  id          String       @id @db.Uuid
+  userId      String       @db.Uuid
+  month       DateTime     @db.Date
+  fromBucket  BudgetBucket
+  toBucket    BudgetBucket
+  amountCents Int
+  note        String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, month])
+}
+
+/// Importación de un archivo (Excel). Cada fila confirmada queda ligada para no duplicarse.
+model ImportBatch {
+  id          String      @id @db.Uuid
+  userId      String      @db.Uuid
+  fileName    String
+  fileHash    String
+  status      String      @default("PREVIEW")
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  confirmedAt DateTime?   @db.Timestamptz(3)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rows        ImportRow[]
+
+  @@index([userId])
+}
+
+model ImportRow {
+  id        String      @id @db.Uuid
+  batchId   String      @db.Uuid
+  sheet     String
+  cellRef   String
+  /// Huella estable (hoja + nombre + importe + fecha) para detectar filas ya importadas.
+  rowHash   String
+  kind      String
+  data      Json
+  batch     ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([rowHash])
 }

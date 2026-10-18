@@ -55,7 +55,7 @@ export function dueReminders(i: ReminderInput): Reminder[] {
   const awakeTotal = norm(i.bedMinutes - i.wakeMinutes) || 1440;
 
   if (i.enabled.TRAINING && (i.plannedKind === 'STRENGTH' || i.plannedKind === 'WALK_MOBILITY') && !i.activityDone && inWindow(i.nowMinutes, i.trainingMinutes)) {
-    out.push({ kind: 'TRAINING', slot: 'main', title: `Hoy toca ${i.plannedLabel}`, body: 'Unos 30 minutos. Cuando termines, regístralo.', url: '/actividad' });
+    out.push({ kind: 'TRAINING', slot: 'main', title: `Hoy toca ${i.plannedLabel}`, body: 'Unos 30 minutos. Cuando termines, regístralo.', url: '/salud/actividad' });
   }
 
   if (i.enabled.HYDRATION && i.waterGoalMl) {
@@ -70,18 +70,18 @@ export function dueReminders(i: ReminderInput): Reminder[] {
           slot: `h${h}`,
           title: 'Un vaso de agua',
           body: `Llevas ${(i.waterMl / 1000).toFixed(1)} de ${(i.waterGoalMl / 1000).toFixed(1)} L.`,
-          url: '/',
+          url: '/salud',
         });
       }
     }
   }
 
   if (i.enabled.BEDTIME && inWindow(i.nowMinutes, norm(i.bedMinutes - BEDTIME_LEAD))) {
-    out.push({ kind: 'BEDTIME', slot: 'main', title: 'Prepárate para dormir', body: `En ${BEDTIME_LEAD} minutos es tu hora. Baja las pantallas.`, url: '/' });
+    out.push({ kind: 'BEDTIME', slot: 'main', title: 'Prepárate para dormir', body: `En ${BEDTIME_LEAD} minutos es tu hora. Baja las pantallas.`, url: '/salud' });
   }
 
   if (i.enabled.WEIGH_IN && i.isWeighInDay && !i.weighedThisWeek && inWindow(i.nowMinutes, norm(i.wakeMinutes + 30))) {
-    out.push({ kind: 'WEIGH_IN', slot: 'main', title: 'Peso semanal', body: 'En ayunas y después de ir al baño.', url: '/cuerpo' });
+    out.push({ kind: 'WEIGH_IN', slot: 'main', title: 'Peso semanal', body: 'En ayunas y después de ir al baño.', url: '/salud/cuerpo' });
   }
 
   return out;

@@ -10,6 +10,8 @@ import { activityRouter } from './routes/activity';
 import { authRouter } from './routes/auth';
 import { cronRouter } from './routes/cron';
 import { bodyRouter } from './routes/body';
+import { financeRouter } from './routes/finance';
+import { financeImportRouter } from './routes/finance-import';
 import { habitsRouter } from './routes/habits';
 import { hydrationRouter } from './routes/hydration';
 import { logsRouter } from './routes/logs';
@@ -46,7 +48,7 @@ export function createApp() {
 
   const api = Router();
   api.use(requireAuth);
-  api.use(todayRouter, profileRouter, bodyRouter, hydrationRouter, habitsRouter, logsRouter, activityRouter, accountRouter, notificationsRouter, weatherRouter);
+  api.use(todayRouter, profileRouter, bodyRouter, hydrationRouter, habitsRouter, logsRouter, activityRouter, accountRouter, notificationsRouter, weatherRouter, financeRouter, financeImportRouter);
   app.use('/api', api);
 
   app.use('/api', () => {
