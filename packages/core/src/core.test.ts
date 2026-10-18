@@ -274,6 +274,19 @@ describe('siguiente paso', () => {
 });
 
 import { dueReminders, inWindow, type ReminderInput } from './reminders';
+import { dayStartMinutes, logicalDateKey } from './dates';
+
+describe('día lógico', () => {
+  it('cambia a la mitad del sueño, no a medianoche', () => {
+    expect(dayStartMinutes('02:00', '09:30')).toBe(5 * 60 + 45);
+    expect(dayStartMinutes('23:00', '07:00')).toBe(3 * 60);
+    const start = dayStartMinutes('02:00', '09:30');
+    // 1:00 a. m. del 19 en CDMX (07:00Z) sigue siendo el día 18
+    expect(logicalDateKey(new Date('2026-10-19T07:00:00Z'), 'America/Mexico_City', start)).toBe('2026-10-18');
+    // 8:00 a. m. del 19 (14:00Z) ya es el 19
+    expect(logicalDateKey(new Date('2026-10-19T14:00:00Z'), 'America/Mexico_City', start)).toBe('2026-10-19');
+  });
+});
 
 describe('recordatorios push', () => {
   const base: ReminderInput = {

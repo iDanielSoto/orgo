@@ -2,7 +2,7 @@ import type { UserProfile as FullProfile, UserSettings } from '@prisma/client';
 
 /** Perfil sin la foto (los bytes sólo se leen en la ruta de la foto). */
 export type UserProfile = Omit<FullProfile, 'avatar'>;
-import { localMinutesOfDay, toDateKey, type DateKey } from '@forma/core';
+import { dayStartMinutes, localMinutesOfDay, logicalDateKey, type DateKey } from '@forma/core';
 import { prisma } from '../db';
 import { HttpError } from '../lib/http';
 import { dateKey } from '../lib/serialize';
@@ -12,8 +12,11 @@ export interface UserContext {
   settings: UserSettings;
   profile: UserProfile | null;
   tz: string;
+  /** Día lógico (cambia a la mitad de la ventana de sueño, no a medianoche). */
   today: DateKey;
   nowMinutes: number;
+  /** Minuto del reloj en que empieza el día lógico. */
+  dayStart: number;
   programStart: DateKey | null;
 }
 
@@ -23,13 +26,15 @@ export async function loadContext(userId: string, now = new Date()): Promise<Use
     prisma.userProfile.findUnique({ where: { userId }, omit: { avatar: true } }),
   ]);
   const tz = settings.timezone;
+  const dayStart = dayStartMinutes(settings.targetBedtime, settings.targetWakeTime);
   return {
     userId,
     settings,
     profile,
     tz,
-    today: toDateKey(now, tz),
+    today: logicalDateKey(now, tz, dayStart),
     nowMinutes: localMinutesOfDay(now, tz),
+    dayStart,
     programStart: profile ? dateKey(profile.programStartDate) : null,
   };
 }
@@ -39,6 +44,6 @@ export function requireProfile(ctx: UserContext): UserProfile & { programStart: 
   return Object.assign(ctx.profile, { programStart: ctx.programStart });
 }
 
-/** Día local de un instante para este usuario. */
+/** Día lógico de un instante para este usuario (los registros de madrugada cuentan para el día anterior). */
 export const localDateOf = (ctx: UserContext, iso: string | Date) =>
-  toDateKey(typeof iso === 'string' ? new Date(iso) : iso, ctx.tz);
+  logicalDateKey(typeof iso === 'string' ? new Date(iso) : iso, ctx.tz, ctx.dayStart);

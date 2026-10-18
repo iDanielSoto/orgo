@@ -88,3 +88,20 @@ export function formatClock(minutes: number): string {
   const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
+
+/**
+ * Día "lógico" del usuario: no cambia a medianoche sino a la mitad de su ventana de sueño.
+ * Ej.: duerme 02:00 → despierta 09:30 ⇒ el día cambia a las 05:45; a la 1 a. m. sigue siendo "hoy".
+ */
+export function dayStartMinutes(bed: string, wake: string): number {
+  const b = parseClock(bed);
+  const w = parseClock(wake);
+  const sleep = w > b ? w - b : w + 1440 - b;
+  return Math.round(b + sleep / 2) % 1440;
+}
+
+/** Fecha lógica de un instante: antes del cambio de día cuenta como el día anterior. */
+export function logicalDateKey(instant: Date, timeZone: string, startMinutes: number): DateKey {
+  const key = toDateKey(instant, timeZone);
+  return localMinutesOfDay(instant, timeZone) < startMinutes ? addDays(key, -1) : key;
+}

@@ -105,7 +105,7 @@ todayRouter.get('/today', async (req, res) => {
       glassSizeMl: settings.glassSizeMl,
     },
     meals: meals.map((m) => ({ id: m.id, type: m.type, description: m.description, proteinSource: m.proteinSource, eatenAt: m.eatenAt.toISOString() })),
-    schedule: { wake: settings.targetWakeTime, training: settings.trainingTime, bed: settings.targetBedtime },
+    schedule: { wake: settings.targetWakeTime, training: settings.trainingTime, bed: settings.targetBedtime, dayStart: ctx.dayStart },
     sleep: sleep && {
       id: sleep.id,
       durationMinutes: sleep.durationMinutes,

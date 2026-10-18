@@ -33,7 +33,7 @@ export interface Today {
     glassSizeMl: number;
   };
   meals: { id: string; type: MealType; description: string; proteinSource: string | null; eatenAt: string }[];
-  schedule: { wake: string; training: string; bed: string };
+  schedule: { wake: string; training: string; bed: string; dayStart: number };
   sleep: {
     id: string;
     durationMinutes: number;

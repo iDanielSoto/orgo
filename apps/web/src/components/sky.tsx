@@ -155,6 +155,9 @@ export function Sky() {
   React.useEffect(() => {
     sceneRef.current = scene;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', rgba(scene.top));
+    // Cielo claro u oscuro: el CSS ajusta contraste del texto y la palabra de calor su color.
+    const lum = 0.3 * scene.mid[0] + 0.59 * scene.mid[1] + 0.11 * scene.mid[2];
+    document.documentElement.dataset.sky = lum > 95 ? 'light' : 'dark';
   }, [scene]);
 
   React.useEffect(() => {
@@ -212,12 +215,12 @@ export function Sky() {
         ctx.fillStyle = rg;
         ctx.fillRect(0, 0, W, H);
         if (s.sun.elev > 0.02 && s.overcast < 0.6) {
-          const core = ctx.createRadialGradient(sx, sy, 0, sx, sy, 34);
-          core.addColorStop(0, rgba([255, 252, 240], 0.95 * (1 - s.overcast)));
+          const core = ctx.createRadialGradient(sx, sy, 0, sx, sy, 22);
+          core.addColorStop(0, rgba([255, 252, 240], 0.55 * (1 - s.overcast)));
           core.addColorStop(1, rgba(s.sun.color, 0));
           ctx.fillStyle = core;
           ctx.beginPath();
-          ctx.arc(sx, sy, 34, 0, Math.PI * 2);
+          ctx.arc(sx, sy, 22, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -274,6 +277,14 @@ export function Sky() {
         ctx.fillStyle = fg;
         ctx.fillRect(0, 0, W, H);
       }
+
+      // Sombra suave arriba (título y fecha) para que se lean con el cielo claro.
+      const lightness = clamp(s.sun.elev * 2.5);
+      const topShade = ctx.createLinearGradient(0, 0, 0, H * 0.32);
+      topShade.addColorStop(0, `rgba(4,14,40,${0.32 * lightness})`);
+      topShade.addColorStop(1, 'rgba(4,14,40,0)');
+      ctx.fillStyle = topShade;
+      ctx.fillRect(0, 0, W, H * 0.32);
 
       // Sombra suave abajo para que la barra y el texto se lean con el cielo claro.
       const shade = ctx.createLinearGradient(0, H * 0.7, 0, H);

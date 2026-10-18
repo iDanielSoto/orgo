@@ -19,6 +19,14 @@ const POP = [
   [92, 160, 255],
   [170, 215, 255],
 ];
+// Con el cielo claro (de día) el azul se pierde: las letras se encienden en dorado.
+const GOLD = [
+  [255, 255, 255],
+  [255, 236, 170],
+  [255, 214, 90],
+  [255, 196, 60],
+  [255, 236, 170],
+];
 const mix = (t: number, palette: number[][]) => {
   const x = Math.min(Math.max(t, 0), 1) * (palette.length - 1);
   const i = Math.min(Math.floor(x), palette.length - 2);
@@ -58,7 +66,7 @@ export function HeatWord({ text, className }: { text: string; className?: string
         const d = Math.hypot(b.left + b.width / 2 - x, b.top + b.height / 2 - y);
         const target = Math.max(0, 1 - d / R) ** 1.4;
         heat[i]! += (target - heat[i]!) * (target > heat[i]! ? 0.25 : 0.06);
-        const [r, g, bl] = mix(heat[i]!, POP);
+        const [r, g, bl] = mix(heat[i]!, document.documentElement.dataset.sky === 'light' ? GOLD : POP);
         c.style.color = `rgb(${r} ${g} ${bl})`;
         c.style.fontWeight = String(Math.round(600 + heat[i]! * 300));
       });
@@ -113,7 +121,8 @@ export function GlassRefraction() {
       const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, Math.min(w, h) / 2);
       const id = el.dataset.glassId || `glass-${n++}`;
       el.dataset.glassId = id;
-      const s = -Math.min(w, h) * 0.9;
+      // En superficies grandes (tarjetas) la curvatura se limita para no deformar lo de atrás.
+      const s = -Math.min(w, h, 120) * 0.9;
       const fringe = 40;
       const ch = (c: string, k: number, m: string) =>
         `<feDisplacementMap in="SourceGraphic" in2="map" scale="${s * k}" xChannelSelector="R" yChannelSelector="B" result="d${c}"/><feColorMatrix in="d${c}" result="${c}" values="${m}"/>`;
