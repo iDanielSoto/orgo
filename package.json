@@ -1,0 +1,19 @@
+{
+  "name": "forma",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @forma/api --filter @forma/web dev",
+    "build": "pnpm --filter @forma/api build && pnpm --filter @forma/web build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:migrate": "pnpm --filter @forma/api db:migrate",
+    "db:seed": "pnpm --filter @forma/api db:seed",
+    "vercel-build": "pnpm --filter @forma/api exec prisma migrate deploy && pnpm --filter @forma/api build && node apps/api/dist/seed.js --if-configured && pnpm --filter @forma/web build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module"
+}

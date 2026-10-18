@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+
+/*
+ * Estética iOS 27 + portafolio: noche #0a0e1f con tablero ASCII, vidrio líquido,
+ * tipografía del sistema (SF en iPhone), azul de calor y estrellas amarillas.
+ */
+:root {
+  --bg: #0a0e1f;
+  --ink: #eef1fa;
+  --ink-2: rgba(238, 241, 250, 0.64);
+  --ink-3: rgba(238, 241, 250, 0.38);
+  --sep: rgba(238, 241, 250, 0.1);
+  --fill: rgba(238, 241, 250, 0.07);
+  --tint: #5ca0ff;
+  --star: #ffd23f;
+  --green: #30d158;
+  --red: #ff6b5e;
+  --sheet: rgba(22, 27, 46, 0.86);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter Tight', system-ui, sans-serif;
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-sep: var(--sep);
+  --color-fill: var(--fill);
+  --color-tint: var(--tint);
+  --color-star: var(--star);
+  --color-green: var(--green);
+  --color-red: var(--red);
+}
+
+@layer base {
+  * {
+    scrollbar-width: none;
+    border-color: var(--sep);
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  html {
+    background: var(--bg);
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+    text-shadow: 0 1px 10px rgba(5, 8, 20, 0.22);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  button {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--tint);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: #f2b705;
+    color: #0a0e1f;
+  }
+}
+
+/* Vidrio líquido (glass-bubble del portafolio): esmerilado en Safari, con refracción en Chromium. */
+@layer components {
+  .glass {
+    position: relative;
+  }
+}
+.glass {
+  isolation: isolate;
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  backdrop-filter: blur(10px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.15),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 10px 30px -12px rgba(0, 0, 0, 0.6);
+}
+.glass-refract .glass {
+  backdrop-filter: var(--glass-filter, none) saturate(1.5) brightness(1.04);
+}
+/* Menús y hojas: el mismo vidrio de las burbujas (con su refracción) y un desenfoque ligero
+   para que el texto se lea sobre lo que hay detrás. */
+.glass.glass-thick {
+  background: linear-gradient(rgba(8, 12, 30, 0.22), rgba(8, 12, 30, 0.22)), rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
+}
+.glass-refract .glass.glass-thick {
+  backdrop-filter: blur(5px) var(--glass-filter, none) saturate(1.5) brightness(1.04);
+}
+
+.press {
+  transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.press:active {
+  transform: scale(0.94);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

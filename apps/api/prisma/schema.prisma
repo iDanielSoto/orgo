@@ -1,0 +1,651 @@
+// FORMA — esquema de datos
+//
+// Unidades canónicas (documentadas y fijas):
+//   peso: kg · longitudes: cm · volúmenes: ml · energía: kcal · macronutrientes: g
+//   duraciones: minutos · instantes: timestamptz (UTC) · días locales: DATE en la
+//   zona horaria del usuario (UserSettings.timezone).
+//
+// Los registros creados desde el cliente usan UUID generados en el cliente para
+// permitir reintentos idempotentes (sincronización offline).
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  /// Conexión directa (sin pooler) para migraciones; en local puede ser igual a DATABASE_URL.
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ---------------------------------------------------------------------------
+// Identidad
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  sessions                Session[]
+  profile                 UserProfile?
+  healthProfile           HealthProfile?
+  settings                UserSettings?
+  notificationPreferences NotificationPreference[]
+  pushSubscriptions       PushSubscription[]
+  notificationLogs        NotificationLog[]
+  goals                   Goal[]
+  measurements            BodyMeasurement[]
+  progressPhotos          ProgressPhoto[]
+  foods                   Food[]
+  meals                   Meal[]
+  beverageLogs            BeverageLog[]
+  hydrationGoals          HydrationGoal[]
+  exercises               Exercise[]
+  workoutTemplates        WorkoutTemplate[]
+  workoutSessions         WorkoutSession[]
+  walkingSessions         WalkingSession[]
+  sleepLogs               SleepLog[]
+  habits                  Habit[]
+  habitCompletions        HabitCompletion[]
+  weeklyReviews           WeeklyReview[]
+}
+
+/// Sesiones de servidor. `id` es el SHA-256 del token que viaja en la cookie HTTP-only.
+model Session {
+  id         String   @id
+  userId     String   @db.Uuid
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHT
+  MODERATE
+  ACTIVE
+  VERY_ACTIVE
+}
+
+model UserProfile {
+  id                    String        @id @default(uuid()) @db.Uuid
+  userId                String        @unique @db.Uuid
+  displayName           String
+  /// Edad declarada y la fecha en que se registró (la edad actual se deriva).
+  ageYears              Int
+  ageRecordedOn         DateTime      @db.Date
+  /// Sexo usado únicamente para fórmulas fisiológicas de estimación.
+  sexForEstimates       Sex
+  heightCm              Decimal       @db.Decimal(5, 1)
+  startWeightKg         Decimal       @db.Decimal(5, 2)
+  targetWeightKg        Decimal       @db.Decimal(5, 2)
+  activityLevel         ActivityLevel @default(SEDENTARY)
+  primaryGoal           String
+  secondaryGoals        String[]
+  trainingLocation      String?
+  equipment             String[]
+  trainingDaysPerWeek   Int           @default(5)
+  sessionMinutes        Int           @default(30)
+  preferredTrainingTime String?
+  programStartDate      DateTime      @db.Date
+  firstReviewDate       DateTime      @db.Date
+  obstacles             String[]
+  onboardingCompletedAt DateTime?     @db.Timestamptz(3)
+  /// Foto de perfil (JPEG/PNG/WebP pequeño, ≤ 300 KB). Privada: sólo se sirve con sesión.
+  avatar                Bytes?
+  avatarMime            String?
+  avatarUpdatedAt       DateTime?     @db.Timestamptz(3)
+  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Información de salud y estilo de vida declarada por el usuario (no diagnóstica).
+model HealthProfile {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @unique @db.Uuid
+  conditions           String[]
+  medications          String[]
+  physicalLimitations  String[]
+  symptoms             String[]
+  dailyActivity        String?
+  currentExercise      String?
+  physicalCapacity     String?
+  dietSummary          String?
+  foodPreferences      String?
+  weeklyExtraBudgetMxn Decimal? @db.Decimal(10, 2)
+  usualBedtime         String? // HH:mm
+  usualWakeTime        String? // HH:mm
+  usualSleepHours      Decimal? @db.Decimal(4, 2)
+  sleepQuality         String?
+  stressLevel          String?
+  lifestyleNotes       String?
+  snoringReported      Boolean  @default(false)
+  breathingPausesReported Boolean @default(false)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+enum NutritionMode {
+  SIMPLE
+  DETAILED
+}
+
+model UserSettings {
+  id                  String          @id @default(uuid()) @db.Uuid
+  userId              String          @unique @db.Uuid
+  timezone            String          @default("America/Mexico_City")
+  locale              String          @default("es-MX")
+  currency            String          @default("MXN")
+  theme               ThemePreference @default(SYSTEM)
+  nutritionMode       NutritionMode   @default(SIMPLE)
+  /// Tamaño de un "vaso" de refresco, en ml.
+  glassSizeMl         Int             @default(355)
+  /// Línea base de consumo de refresco (vasos/día) antes de aplicar reducciones.
+  sodaBaselineGlasses Decimal?        @db.Decimal(4, 1)
+  energyTargetMinKcal Int             @default(2000)
+  energyTargetMaxKcal Int             @default(2200)
+  proteinTargetMinG   Int             @default(110)
+  proteinTargetMaxG   Int             @default(140)
+  sleepTargetMinHours Decimal         @default(7) @db.Decimal(3, 1)
+  sleepTargetMaxHours Decimal         @default(9) @db.Decimal(3, 1)
+  targetBedtime       String          @default("02:00")
+  targetWakeTime      String          @default("09:30")
+  trainingTime        String          @default("10:00")
+  /// Días que se conservan los registros (null = indefinido).
+  retentionDays       Int?
+  analyticsOptIn      Boolean         @default(false)
+  aiDataSharingOptIn  Boolean         @default(false)
+  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum ReminderKind {
+  TRAINING
+  WEEKLY_REVIEW
+  WEIGH_IN
+  BEDTIME
+  HYDRATION
+}
+
+model NotificationPreference {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @db.Uuid
+  kind       ReminderKind
+  enabled    Boolean      @default(false)
+  timeOfDay  String? // HH:mm
+  /// Días de la semana (0 = domingo).
+  weekdays   Int[]
+  /// Para recordatorios repetitivos (hidratación), intervalo en minutos.
+  intervalMinutes Int?
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime     @updatedAt @db.Timestamptz(3)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+}
+
+/// Suscripción Web Push de un dispositivo (p. ej. la PWA instalada en el iPhone).
+model PushSubscription {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userAgent     String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  lastSuccessAt DateTime? @db.Timestamptz(3)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Registro de recordatorios enviados: evita duplicados (un envío por usuario, tipo, día y turno).
+model NotificationLog {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  kind      ReminderKind
+  localDate DateTime     @db.Date
+  slot      String
+  sentAt    DateTime     @default(now()) @db.Timestamptz(3)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, localDate, slot])
+}
+
+// ---------------------------------------------------------------------------
+// Objetivos y cuerpo
+// ---------------------------------------------------------------------------
+
+enum GoalCategory {
+  WEIGHT
+  STRENGTH
+  ACTIVITY
+  WATER
+  SODA
+  SLEEP
+  CONSISTENCY
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  ARCHIVED
+}
+
+model Goal {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @db.Uuid
+  category    GoalCategory
+  title       String
+  /// Hito intermedio (p. ej. 92.5 kg) frente a meta principal.
+  isMilestone Boolean      @default(false)
+  targetValue Decimal?     @db.Decimal(10, 2)
+  unit        String?
+  targetDate  DateTime?    @db.Date
+  status      GoalStatus   @default(ACTIVE)
+  achievedAt  DateTime?    @db.Timestamptz(3)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, category])
+}
+
+model BodyMeasurement {
+  id         String   @id @db.Uuid
+  userId     String   @db.Uuid
+  measuredAt DateTime @db.Timestamptz(3)
+  localDate  DateTime @db.Date
+  weightKg   Decimal? @db.Decimal(5, 2)
+  waistCm    Decimal? @db.Decimal(5, 1)
+  hipCm      Decimal? @db.Decimal(5, 1)
+  chestCm    Decimal? @db.Decimal(5, 1)
+  armCm      Decimal? @db.Decimal(5, 1)
+  thighCm    Decimal? @db.Decimal(5, 1)
+  neckCm     Decimal? @db.Decimal(5, 1)
+  note       String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+}
+
+model ProgressPhoto {
+  id          String   @id @db.Uuid
+  userId      String   @db.Uuid
+  /// Clave en el almacenamiento privado (nunca una URL pública).
+  storageKey  String   @unique
+  mimeType    String
+  sizeBytes   Int
+  pose        String?
+  takenAt     DateTime @db.Timestamptz(3)
+  localDate   DateTime @db.Date
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+}
+
+// ---------------------------------------------------------------------------
+// Alimentación e hidratación
+// ---------------------------------------------------------------------------
+
+enum NutritionSource {
+  USER
+  APPROXIMATION
+  REFERENCE
+}
+
+model Food {
+  id              String          @id @default(uuid()) @db.Uuid
+  userId          String          @db.Uuid
+  name            String
+  category        String?
+  /// Descripción de la porción de referencia (p. ej. "1 tortilla de maíz, 30 g").
+  servingLabel    String
+  servingGrams    Decimal?        @db.Decimal(7, 1)
+  kcal            Decimal?        @db.Decimal(7, 1)
+  proteinG        Decimal?        @db.Decimal(6, 1)
+  carbsG          Decimal?        @db.Decimal(6, 1)
+  fatG            Decimal?        @db.Decimal(6, 1)
+  source          NutritionSource @default(APPROXIMATION)
+  sourceNote      String?
+  isFavorite      Boolean         @default(false)
+  archivedAt      DateTime?       @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealItems       MealItem[]
+
+  @@unique([userId, name])
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+}
+
+enum PortionSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+model Meal {
+  id            String       @id @db.Uuid
+  userId        String       @db.Uuid
+  type          MealType
+  eatenAt       DateTime     @db.Timestamptz(3)
+  localDate     DateTime     @db.Date
+  description   String
+  portion       PortionSize?
+  proteinSource String?
+  hasFruit      Boolean      @default(false)
+  hasVegetables Boolean      @default(false)
+  /// Hambre antes de comer (1 = nada, 5 = mucha).
+  hungerBefore  Int?
+  note          String?
+  isFavorite    Boolean      @default(false)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items         MealItem[]
+
+  @@index([userId, localDate])
+}
+
+/// Modo detallado: cantidades y valores estimados por alimento.
+model MealItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  mealId    String   @db.Uuid
+  foodId    String?  @db.Uuid
+  name      String
+  servings  Decimal  @default(1) @db.Decimal(6, 2)
+  kcal      Decimal? @db.Decimal(7, 1)
+  proteinG  Decimal? @db.Decimal(6, 1)
+  carbsG    Decimal? @db.Decimal(6, 1)
+  fatG      Decimal? @db.Decimal(6, 1)
+  meal      Meal     @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  food      Food?    @relation(fields: [foodId], references: [id], onDelete: SetNull)
+
+  @@index([mealId])
+}
+
+enum BeverageType {
+  WATER
+  SODA_REGULAR
+  SODA_ZERO
+  JUICE
+  COFFEE
+  TEA
+  OTHER
+}
+
+model BeverageLog {
+  id        String       @id @db.Uuid
+  userId    String       @db.Uuid
+  type      BeverageType
+  volumeMl  Int
+  loggedAt  DateTime     @db.Timestamptz(3)
+  localDate DateTime     @db.Date
+  note      String?
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @db.Timestamptz(3)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+  @@index([userId, type, localDate])
+}
+
+/// Metas progresivas por semana de programa (la última se mantiene después).
+model HydrationGoal {
+  id             String @id @default(uuid()) @db.Uuid
+  userId         String @db.Uuid
+  weekNumber     Int
+  waterMl        Int
+  sodaMaxGlasses Int?
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Entrenamiento
+// ---------------------------------------------------------------------------
+
+model Exercise {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  slug          String
+  name          String
+  instructions  String[]
+  cues          String[]
+  /// Ejercicio por lado/pierna.
+  perSide       Boolean  @default(false)
+  equipment     String?
+  mediaUrl      String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateItems WorkoutTemplateExercise[]
+  sets          ExerciseSet[]
+
+  @@unique([userId, slug])
+}
+
+model WorkoutTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  code        String // "A", "B"
+  name        String
+  warmup      String[]
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises   WorkoutTemplateExercise[]
+  sessions    WorkoutSession[]
+
+  @@unique([userId, code])
+}
+
+model WorkoutTemplateExercise {
+  id          String          @id @default(uuid()) @db.Uuid
+  templateId  String          @db.Uuid
+  exerciseId  String          @db.Uuid
+  position    Int
+  sets        Int
+  repsMin     Int
+  repsMax     Int
+  restSeconds Int             @default(60)
+  template    WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  exercise    Exercise        @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+}
+
+enum SessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model WorkoutSession {
+  id               String           @id @db.Uuid
+  userId           String           @db.Uuid
+  templateId       String?          @db.Uuid
+  routineCode      String?
+  status           SessionStatus    @default(COMPLETED)
+  startedAt        DateTime         @db.Timestamptz(3)
+  endedAt          DateTime?        @db.Timestamptz(3)
+  localDate        DateTime         @db.Date
+  durationMinutes  Int?
+  /// Esfuerzo percibido (RPE 1–10).
+  perceivedEffort  Int?
+  pain             Boolean          @default(false)
+  excessiveFatigue Boolean          @default(false)
+  poorRecovery     Boolean          @default(false)
+  note             String?
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template         WorkoutTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sets             ExerciseSet[]
+
+  @@index([userId, localDate])
+}
+
+model ExerciseSet {
+  id          String         @id @db.Uuid
+  sessionId   String         @db.Uuid
+  exerciseId  String         @db.Uuid
+  setNumber   Int
+  reps        Int?
+  side        String?
+  completedAt DateTime       @db.Timestamptz(3)
+  session     WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exercise    Exercise       @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model WalkingSession {
+  id               String   @id @db.Uuid
+  userId           String   @db.Uuid
+  startedAt        DateTime @db.Timestamptz(3)
+  localDate        DateTime @db.Date
+  durationMinutes  Int
+  perceivedEffort  Int?
+  includedMobility Boolean  @default(true)
+  pain             Boolean  @default(false)
+  excessiveFatigue Boolean  @default(false)
+  poorRecovery     Boolean  @default(false)
+  note             String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+}
+
+// ---------------------------------------------------------------------------
+// Sueño, hábitos y revisiones
+// ---------------------------------------------------------------------------
+
+model SleepLog {
+  id              String   @id @db.Uuid
+  userId          String   @db.Uuid
+  bedtime         DateTime @db.Timestamptz(3)
+  wakeTime        DateTime @db.Timestamptz(3)
+  /// Día local del despertar: el sueño "de anoche" para ese día.
+  localDate       DateTime @db.Date
+  durationMinutes Int
+  quality         Int?
+  energy          Int?
+  note            String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, localDate])
+}
+
+enum HabitFrequency {
+  DAILY
+  WEEKLY
+}
+
+enum HabitAutoRule {
+  NONE
+  SCHEDULED_ACTIVITY
+  SODA_LIMIT
+  WATER_GOAL
+  PROTEIN_MEALS
+  SLEEP_WINDOW
+  WEEKLY_WEIGH_IN
+}
+
+model Habit {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @db.Uuid
+  name        String
+  description String?
+  frequency   HabitFrequency    @default(DAILY)
+  autoRule    HabitAutoRule     @default(NONE)
+  sortOrder   Int               @default(0)
+  archivedAt  DateTime?         @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completions HabitCompletion[]
+
+  @@index([userId, archivedAt])
+}
+
+/// Registro manual. Para hábitos semanales `periodDate` es el día 1 de la semana de programa.
+model HabitCompletion {
+  id          String   @id @default(uuid()) @db.Uuid
+  habitId     String   @db.Uuid
+  userId      String   @db.Uuid
+  periodDate  DateTime @db.Date
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  habit       Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, periodDate])
+  @@index([userId, periodDate])
+}
+
+model WeeklyReview {
+  id                  String   @id @db.Uuid
+  userId              String   @db.Uuid
+  weekNumber          Int
+  periodStart         DateTime @db.Date
+  periodEnd           DateTime @db.Date
+  weightKg            Decimal? @db.Decimal(5, 2)
+  energy              Int?
+  sleepQuality        Int?
+  hunger              Int?
+  trainingDifficulty  Int?
+  sodaPerception      Int?
+  hydrationPerception Int?
+  obstacles           String?
+  overallFeeling      Int?
+  /// Resumen calculado y recomendaciones generadas al cerrar la revisión.
+  summary             Json?
+  recommendations     Json?
+  completedAt         DateTime? @db.Timestamptz(3)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekNumber])
+}
