@@ -32,7 +32,8 @@ export interface Today {
     sodaMaxGlasses: number | null;
     glassSizeMl: number;
   };
-  meals: { id: string; type: MealType; description: string; proteinSource: string | null }[];
+  meals: { id: string; type: MealType; description: string; proteinSource: string | null; eatenAt: string }[];
+  schedule: { wake: string; training: string; bed: string };
   sleep: {
     id: string;
     durationMinutes: number;
@@ -113,6 +114,9 @@ export interface Settings {
   targetBedtime: string;
   targetWakeTime: string;
   trainingTime: string;
+  weatherLatitude: number;
+  weatherLongitude: number;
+  weatherPlace: string;
 }
 
 export interface Measurement {

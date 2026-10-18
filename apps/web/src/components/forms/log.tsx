@@ -13,7 +13,7 @@ export type LogRequest =
   | { kind: 'weight' }
   | { kind: 'sleep'; edit?: SleepEntry }
   | { kind: 'meals' }
-  | { kind: 'meal'; edit?: Meal }
+  | { kind: 'meal'; edit?: Meal; type?: MealType }
   | { kind: 'activity'; routine?: 'A' | 'B' | 'WALK' | null };
 
 const LogContext = React.createContext<(req: LogRequest) => void>(() => undefined);
@@ -39,7 +39,7 @@ export function LogProvider({ children }: { children: React.ReactNode }) {
         {req?.kind === 'weight' && <WeightSheet {...props} />}
         {req?.kind === 'sleep' && <SleepSheet {...props} edit={req.edit} />}
         {req?.kind === 'meals' && <MealsSheet {...props} />}
-        {req?.kind === 'meal' && <MealSheet {...props} edit={req.edit} />}
+        {req?.kind === 'meal' && <MealSheet {...props} edit={req.edit} type={req.type} />}
         {req?.kind === 'activity' && <ActivitySheet {...props} routine={req.routine ?? null} />}
       </React.Fragment>
     </LogContext.Provider>
@@ -207,8 +207,8 @@ function guessMeal(): MealType {
   return 'SNACK';
 }
 
-function MealSheet({ open, onOpenChange, onClose, edit }: SheetProps & { edit?: Meal }) {
-  const [type, setType] = React.useState<MealType>(edit?.type ?? guessMeal());
+function MealSheet({ open, onOpenChange, onClose, edit, type: preset }: SheetProps & { edit?: Meal; type?: MealType }) {
+  const [type, setType] = React.useState<MealType>(edit?.type ?? preset ?? guessMeal());
   const [desc, setDesc] = React.useState(edit?.description ?? '');
   const [protein, setProtein] = React.useState(Boolean(edit?.proteinSource));
   const save = useAction(

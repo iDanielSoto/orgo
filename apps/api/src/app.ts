@@ -16,6 +16,7 @@ import { logsRouter } from './routes/logs';
 import { notificationsRouter } from './routes/notifications';
 import { profileRouter } from './routes/profile';
 import { todayRouter } from './routes/today';
+import { weatherRouter } from './routes/weather';
 
 export function createApp() {
   const app = express();
@@ -45,7 +46,7 @@ export function createApp() {
 
   const api = Router();
   api.use(requireAuth);
-  api.use(todayRouter, profileRouter, bodyRouter, hydrationRouter, habitsRouter, logsRouter, activityRouter, accountRouter, notificationsRouter);
+  api.use(todayRouter, profileRouter, bodyRouter, hydrationRouter, habitsRouter, logsRouter, activityRouter, accountRouter, notificationsRouter, weatherRouter);
   app.use('/api', api);
 
   app.use('/api', () => {

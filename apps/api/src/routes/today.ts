@@ -104,7 +104,8 @@ todayRouter.get('/today', async (req, res) => {
       sodaMaxGlasses: day!.sodaMaxGlasses,
       glassSizeMl: settings.glassSizeMl,
     },
-    meals: meals.map((m) => ({ id: m.id, type: m.type, description: m.description, proteinSource: m.proteinSource })),
+    meals: meals.map((m) => ({ id: m.id, type: m.type, description: m.description, proteinSource: m.proteinSource, eatenAt: m.eatenAt.toISOString() })),
+    schedule: { wake: settings.targetWakeTime, training: settings.trainingTime, bed: settings.targetBedtime },
     sleep: sleep && {
       id: sleep.id,
       durationMinutes: sleep.durationMinutes,

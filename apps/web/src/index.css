@@ -1,11 +1,11 @@
 @import 'tailwindcss';
 
 /*
- * Estética iOS 27 + portafolio: noche #0a0e1f con tablero ASCII, vidrio líquido,
- * tipografía del sistema (SF en iPhone), azul de calor y estrellas amarillas.
+ * Estética iOS 27: fondo negro sólido como el modo oscuro del iPhone, vidrio líquido
+ * del portafolio, tipografía del sistema (SF), azul de calor y amarillo puntual.
  */
 :root {
-  --bg: #0a0e1f;
+  --bg: #000000;
   --ink: #eef1fa;
   --ink-2: rgba(238, 241, 250, 0.64);
   --ink-3: rgba(238, 241, 250, 0.38);
@@ -15,7 +15,7 @@
   --star: #ffd23f;
   --green: #30d158;
   --red: #ff6b5e;
-  --sheet: rgba(22, 27, 46, 0.86);
+  --sheet: rgba(28, 28, 30, 0.92);
   color-scheme: dark;
 }
 
@@ -47,7 +47,7 @@
   }
   body {
     min-height: 100dvh;
-    text-shadow: 0 1px 10px rgba(5, 8, 20, 0.22);
+    /* Sin fondo propio: el cielo (canvas con z negativo) se pinta detrás del body. */
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 17px;
@@ -97,7 +97,7 @@
 /* Menús y hojas: el mismo vidrio de las burbujas (con su refracción) y un desenfoque ligero
    para que el texto se lea sobre lo que hay detrás. */
 .glass.glass-thick {
-  background: linear-gradient(rgba(8, 12, 30, 0.22), rgba(8, 12, 30, 0.22)), rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   -webkit-backdrop-filter: blur(14px) saturate(1.6);
   backdrop-filter: blur(14px) saturate(1.6);
 }

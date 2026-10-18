@@ -59,7 +59,7 @@ export function List({ header, children }: { header?: string; children: React.Re
   return (
     <section>
       {header && <h2 className="mb-1.5 ml-5 text-[13px] uppercase tracking-wide text-ink-3">{header}</h2>}
-      <div className="overflow-hidden rounded-[26px] bg-[rgba(8,12,30,0.32)] backdrop-blur-xl [&>*+*]:border-t [&>*+*]:border-sep">{children}</div>
+      <div className="overflow-hidden rounded-[26px] bg-black/25 backdrop-blur-xl [&>*+*]:border-t [&>*+*]:border-sep">{children}</div>
     </section>
   );
 }

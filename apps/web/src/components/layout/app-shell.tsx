@@ -2,7 +2,8 @@ import { Activity, CupSoda, Droplet, House, ListChecks, Moon, Plus, Scale, Utens
 import * as React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { useLog, type LogRequest } from '@/components/forms/log';
-import { AsciiSky, GlassRefraction } from '@/components/portfolio';
+import { GlassRefraction } from '@/components/portfolio';
+import { Sky } from '@/components/sky';
 import { cn } from '@/lib/format';
 
 const TABS = [
@@ -23,7 +24,7 @@ const MENU: { label: string; icon: LucideIcon; req: LogRequest }[] = [
 export function Backdrop() {
   return (
     <>
-      <AsciiSky />
+      <Sky />
       <GlassRefraction />
     </>
   );
@@ -38,7 +39,7 @@ export function AppShell() {
   return (
     <div className="min-h-dvh">
       <Backdrop />
-      <main className="mx-auto w-full max-w-[520px] px-5 pb-40 pt-[max(1.25rem,env(safe-area-inset-top))]">
+      <main className="mx-auto w-full max-w-[520px] px-5 pb-40 pt-[calc(env(safe-area-inset-top)+14px)]">
         <div key={location.pathname} className="animate-[rise_280ms_cubic-bezier(0.16,1,0.3,1)]">
           <Outlet />
         </div>

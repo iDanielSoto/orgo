@@ -173,6 +173,10 @@ model UserSettings {
   targetBedtime       String          @default("02:00")
   targetWakeTime      String          @default("09:30")
   trainingTime        String          @default("10:00")
+  /// Lugar para el cielo y el clima del fondo (por defecto Lázaro Cárdenas, Mich.).
+  weatherLatitude     Decimal         @default(17.9583) @db.Decimal(8, 5)
+  weatherLongitude    Decimal         @default(-102.1944) @db.Decimal(8, 5)
+  weatherPlace        String          @default("Lázaro Cárdenas, Mich.")
   /// Días que se conservan los registros (null = indefinido).
   retentionDays       Int?
   analyticsOptIn      Boolean         @default(false)

@@ -112,6 +112,9 @@ profileRouter.get('/profile', async (req, res) => {
       targetBedtime: s.targetBedtime,
       targetWakeTime: s.targetWakeTime,
       trainingTime: s.trainingTime,
+      weatherLatitude: numReq(s.weatherLatitude),
+      weatherLongitude: numReq(s.weatherLongitude),
+      weatherPlace: s.weatherPlace,
     },
     estimates,
   });

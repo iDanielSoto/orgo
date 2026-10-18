@@ -78,7 +78,13 @@ createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
-      <Toaster position="top-center" toastOptions={{ className: 'font-sans', style: { background: 'var(--sheet)', color: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 18 } }} />
+      <Toaster
+        position="top-center"
+        // En la PWA del iPhone el contenido pasa debajo de la barra de estado: los avisos bajan lo necesario.
+        offset={{ top: 'calc(env(safe-area-inset-top) + 10px)' }}
+        mobileOffset={{ top: 'calc(env(safe-area-inset-top) + 10px)', left: 16, right: 16 }}
+        toastOptions={{ className: 'font-sans', style: { background: 'var(--sheet)', color: 'var(--ink)', border: '1px solid var(--sep)', borderRadius: 18, backdropFilter: 'blur(14px)' } }}
+      />
     </QueryClientProvider>
   </React.StrictMode>,
 );

@@ -69,6 +69,9 @@ export const settingsUpdateSchema = z
     targetBedtime: clockSchema,
     targetWakeTime: clockSchema,
     trainingTime: clockSchema,
+    weatherLatitude: z.number().min(-90).max(90),
+    weatherLongitude: z.number().min(-180).max(180),
+    weatherPlace: z.string().trim().min(1).max(80),
   })
   .partial();
 

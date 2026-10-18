@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import { BigNumber, Item, LargeTitle, List, Sheet, TextItem, TimeItem } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { fmtKg, fmtLiters, fmtNum } from '@/lib/format';
@@ -45,6 +46,8 @@ export function SettingsPage() {
           <Item label="Vaso" detail={`${s.glassSizeMl} ml`} onClick={() => setEdit({ kind: 'number', title: 'Vaso', path: '/settings', field: 'glassSizeMl', value: s.glassSizeMl, unit: 'ml' })} />
         </List>
       )}
+
+      <WeatherPlace place={s.weatherPlace} />
 
       <List header="Horario">
         <Item label="Dormir" detail={s.targetBedtime} onClick={() => setEdit({ kind: 'time', title: 'Dormir', field: 'targetBedtime', value: s.targetBedtime })} />
@@ -148,5 +151,43 @@ function DeleteSheet({ onClose }: { onClose: () => void }) {
         <TextItem placeholder="Escribe ELIMINAR" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
       </List>
     </Sheet>
+  );
+}
+
+/** Lugar del cielo y el clima del fondo. */
+function WeatherPlace({ place }: { place: string }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = React.useState(false);
+  const useMine = () => {
+    if (!('geolocation' in navigator)) return toast.error('Este teléfono no comparte su ubicación');
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await api.patch('/settings', {
+            weatherLatitude: Number(pos.coords.latitude.toFixed(4)),
+            weatherLongitude: Number(pos.coords.longitude.toFixed(4)),
+            weatherPlace: 'Tu ubicación',
+          });
+          await Promise.all([qc.invalidateQueries({ queryKey: ['weather'] }), qc.invalidateQueries({ queryKey: ['profile'] })]);
+          toast.success('El cielo ahora sigue tu ubicación');
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'No se pudo guardar');
+        } finally {
+          setBusy(false);
+        }
+      },
+      () => {
+        setBusy(false);
+        toast.error('No se pudo obtener tu ubicación');
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 3_600_000 },
+    );
+  };
+  return (
+    <List header="Cielo y clima">
+      <Item label="Lugar" detail={place} />
+      <Item label={busy ? 'Buscando…' : 'Usar mi ubicación'} onClick={busy ? undefined : useMine} />
+    </List>
   );
 }
