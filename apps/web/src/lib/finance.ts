@@ -91,6 +91,14 @@ export interface FinSummary {
   balances: { id: string; name: string; type: AccountType; balanceCents: number }[];
   recent: FinTx[];
   upcoming: FinIncome[];
+  projection: {
+    daysLeft: number;
+    incomingCents: number;
+    spentCents: number;
+    paceCents: number;
+    endCents: number;
+    buckets: Record<Bucket, number>;
+  };
   rule: Split;
 }
 

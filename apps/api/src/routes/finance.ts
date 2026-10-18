@@ -10,6 +10,7 @@ import {
   dateKeyToUtc,
   incomeCreateSchema,
   incomeUpdateSchema,
+  monthProjection,
   monthSummary,
   ruleAt,
   transactionCreateSchema,
@@ -144,16 +145,19 @@ financeRouter.get('/finance/summary', async (req, res) => {
     prisma.income.findMany({ where: { userId } }),
     prisma.budgetTransfer.findMany({ where: { userId, month: dateKeyToUtc(from) } }),
   ]);
+  const incomeLikes = incomes.map((i) => {
+    const s = serializeIncome(i);
+    return { id: s.id, name: s.name, amountCents: s.amountCents, status: s.status, receivedOn: s.receivedOn, expectedOn: s.expectedOn, alloc: s.alloc, split: s.split };
+  });
   const summary = monthSummary({
     month,
     accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, openingCents: a.openingBalanceCents, archived: Boolean(a.archivedAt) })),
     movements: txs.map(toMovement),
-    incomes: incomes.map((i) => {
-      const s = serializeIncome(i);
-      return { id: s.id, name: s.name, amountCents: s.amountCents, status: s.status, receivedOn: s.receivedOn, expectedOn: s.expectedOn, alloc: s.alloc };
-    }),
+    incomes: incomeLikes,
     budgetMoves: moves.map((m) => ({ month, from: m.fromBucket, to: m.toBucket, amountCents: m.amountCents })),
   });
+  const rule = ruleAt(await rulesOf(prisma, userId), ctx.today);
+  const projection = monthProjection({ summary, today: ctx.today, incomes: incomeLikes, split: rule });
   const upcoming = incomes
     .filter((i) => i.status === 'PLANNED')
     .map(serializeIncome)
@@ -164,7 +168,8 @@ financeRouter.get('/finance/summary', async (req, res) => {
     today: ctx.today,
     recent: txs.filter((t) => dateKey(t.localDate) >= from).slice(0, 8).map(serializeTx),
     upcoming,
-    rule: ruleAt(await rulesOf(prisma, userId), ctx.today),
+    projection,
+    rule,
   });
 });
 

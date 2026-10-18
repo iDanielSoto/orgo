@@ -248,3 +248,53 @@ export function monthSummary(input: {
 
   return { month, receivedCents, expectedCents, expectedUnknown, spentCents, buckets, savingsSeparatedCents, availableRealCents, creditDebtCents, balances };
 }
+
+// --- Proyección de fin de mes -------------------------------------------------------
+
+export interface MonthProjection {
+  /** Días que faltan del mes después de hoy (0 en meses pasados). */
+  daysLeft: number;
+  /** Lo que ya entró + lo que falta por recibir con importe conocido. */
+  incomingCents: number;
+  spentCents: number;
+  /** Gasto en gustos que falta, estimado a tu ritmo diario de gustos de este mes. */
+  paceCents: number;
+  /** incoming − spent − pace: con cuánto cerrarías el mes. */
+  endCents: number;
+  /** Cómo cerraría cada presupuesto si llegan los ingresos previstos y sigues a tu ritmo. */
+  buckets: Record<Bucket, number>;
+}
+
+/**
+ * Proyección honesta: sólo cuenta ingresos previstos con importe y estima el resto del gasto
+ * con lo que ya gastaste en gustos este mes (los fijos no se extrapolan: suelen pagarse una vez).
+ * Los ingresos previstos se reparten con su distribución propia o con la regla vigente.
+ */
+export function monthProjection(input: {
+  summary: MonthSummary;
+  today: DateKey;
+  incomes: (IncomeLike & { split?: Split | null })[];
+  split: Split;
+}): MonthProjection {
+  const { summary: s, today } = input;
+  const [y, mo] = s.month.split('-').map(Number) as [number, number];
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const current = monthOf(today) === s.month;
+  const past = monthOf(today) > s.month;
+  const elapsed = current ? Number(today.slice(8, 10)) : past ? daysInMonth : 0;
+  const daysLeft = current ? daysInMonth - elapsed : past ? 0 : daysInMonth;
+
+  const expected: Allocation = { SAVINGS: 0, FIXED: 0, FUN: 0 };
+  for (const inc of input.incomes) {
+    if (inc.status !== 'PLANNED' || inc.amountCents === null || !inc.expectedOn || monthOf(inc.expectedOn) !== s.month) continue;
+    const a = allocate(inc.amountCents, inc.split ?? input.split);
+    for (const b of BUCKETS) expected[b] += a[b];
+  }
+
+  const paceCents = elapsed > 0 && daysLeft > 0 ? Math.round((s.buckets.FUN.used / elapsed) * daysLeft) : 0;
+  const buckets = Object.fromEntries(
+    BUCKETS.map((b) => [b, s.buckets[b].remaining + expected[b] - (b === 'FUN' ? paceCents : 0)]),
+  ) as Record<Bucket, number>;
+  const incomingCents = s.receivedCents + s.expectedCents;
+  return { daysLeft, incomingCents, spentCents: s.spentCents, paceCents, endCents: incomingCents - s.spentCents - paceCents, buckets };
+}

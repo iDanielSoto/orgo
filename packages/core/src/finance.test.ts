@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountBalance, allocate, DEFAULT_SPLIT, formatMXN, monthSummary, ruleAt, toCents, type Movement } from './finance';
+import { accountBalance, allocate, DEFAULT_SPLIT, formatMXN, monthProjection, monthSummary, ruleAt, toCents, type Movement } from './finance';
 
 describe('dinero en centavos', () => {
   it('convierte importes sin errores de punto flotante', () => {
@@ -88,6 +88,24 @@ describe('saldos y resumen mensual', () => {
     expect(s.buckets.FUN.remaining).toBe(0);
     expect(s.buckets.FIXED.assigned).toBe(11000);
     expect(s.receivedCents).toBe(210000);
+  });
+
+  it('proyección: suma lo previsto con importe y estima gustos a tu ritmo', () => {
+    const summary = monthSummary({ month: '2026-10', incomes, movements, budgetMoves: [], accounts });
+    const p = monthProjection({ summary, today: '2026-10-12', incomes, split: DEFAULT_SPLIT });
+    expect(p.daysLeft).toBe(19);
+    expect(p.incomingCents).toBe(210000 + 450000); // el sueldo sin importe no se inventa
+    expect(p.paceCents).toBe(Math.round((52000 / 12) * 19));
+    expect(p.endCents).toBe(660000 - 52000 - p.paceCents);
+    const beca = allocate(450000, DEFAULT_SPLIT);
+    expect(p.buckets.SAVINGS).toBe(147000 + beca.SAVINGS);
+    expect(p.buckets.FUN).toBe(-31000 + beca.FUN - p.paceCents);
+  });
+
+  it('proyección de un mes pasado: sin ritmo ni días restantes', () => {
+    const summary = monthSummary({ month: '2026-10', incomes, movements, budgetMoves: [], accounts });
+    const p = monthProjection({ summary, today: '2026-11-05', incomes, split: DEFAULT_SPLIT });
+    expect(p).toMatchObject({ daysLeft: 0, paceCents: 0 });
   });
 
   it('otro mes no mezcla datos', () => {

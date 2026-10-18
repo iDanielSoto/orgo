@@ -154,7 +154,6 @@ export function Sky() {
   const sceneRef = React.useRef(scene);
   React.useEffect(() => {
     sceneRef.current = scene;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', rgba(scene.top));
     // Cielo claro u oscuro: el CSS ajusta contraste del texto y la palabra de calor su color.
     const lum = 0.3 * scene.mid[0] + 0.59 * scene.mid[1] + 0.11 * scene.mid[2];
     document.documentElement.dataset.sky = lum > 95 ? 'light' : 'dark';

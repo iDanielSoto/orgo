@@ -6,7 +6,7 @@ import { Avatar } from '@/components/avatar';
 import { GlassBubble, Liquid } from '@/components/bubbles';
 import { useFin } from '@/components/forms/finance-log';
 import { Capsule, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
-import { fmtDate } from '@/lib/format';
+import { cn, fmtDate } from '@/lib/format';
 import { monthLabel, shiftMonth, useFinSummary, type FinSummary, type FinTx } from '@/lib/finance';
 import { useProfile } from '@/lib/queries';
 
@@ -58,14 +58,20 @@ export function FinanceHomePage() {
       {data && (
         <div className="space-y-8">
           <section>
-            <p className="text-[15px] text-ink-2">Disponible real</p>
-            <p className="mt-1 text-[48px] font-semibold leading-none tracking-[-0.04em] tabular">{formatMXN(data.availableRealCents)}</p>
-            {data.balances.length === 0 ? (
-              <button onClick={() => navigate('/finanzas/cuentas')} className="mt-2 text-[15px] text-tint">
-                Agrega tus cuentas para ver tu saldo
+            <p className="text-[15px] text-ink-2">Te queda este mes</p>
+            <p className="mt-1 text-[48px] font-semibold leading-none tracking-[-0.04em] tabular">{formatMXN(data.receivedCents - data.spentCents)}</p>
+            <p className="mt-2 text-[15px] text-ink-2">
+              Recibiste {compact(data.receivedCents)} y gastaste {compact(data.spentCents)}
+            </p>
+            {data.balances.length === 0 || data.availableRealCents === 0 ? (
+              <button onClick={() => navigate('/finanzas/cuentas')} className="mt-1 text-[15px] font-medium text-ink underline decoration-white/50 underline-offset-4">
+                {data.balances.length === 0 ? 'Agrega tus cuentas para ver tu dinero real' : 'Registra el saldo de tus cuentas'}
               </button>
             ) : (
-              data.creditDebtCents > 0 && <p className="mt-1 text-[15px] text-ink-2">Debes {formatMXN(data.creditDebtCents)} en tarjetas</p>
+              <p className="mt-1 text-[15px] text-ink-2">
+                En tus cuentas {formatMXN(data.availableRealCents)}
+                {data.creditDebtCents > 0 && ` · debes ${formatMXN(data.creditDebtCents)} en tarjetas`}
+              </p>
             )}
           </section>
 
@@ -81,7 +87,7 @@ export function FinanceHomePage() {
                       ariaLabel={BUCKET_LABEL[b]}
                       onClick={() => setBucket(b)}
                       label={compact(st.remaining)}
-                      sub={st.over > 0 ? 'excedido' : 'disponible'}
+                      sub={st.over > 0 ? 'excedido' : b === 'SAVINGS' ? 'para ahorrar' : 'disponible'}
                       className="size-auto aspect-square w-full"
                       labelClassName="text-[17px]"
                     >
@@ -102,8 +108,10 @@ export function FinanceHomePage() {
               onClick={() => navigate('/finanzas/movimientos?ver=ingresos')}
             />
             <Item label="Gastado" detail={formatMXN(data.spentCents)} onClick={() => navigate('/finanzas/movimientos?ver=gastos')} />
-            <Item label="Ahorro separado" detail={`${formatMXN(data.savingsSeparatedCents)} de ${formatMXN(data.buckets.SAVINGS.assigned)}`} />
+            <Item label="Ya apartado en ahorro" detail={`${formatMXN(data.savingsSeparatedCents)} de ${formatMXN(data.buckets.SAVINGS.assigned)}`} />
           </List>
+
+          {data.projection.daysLeft > 0 && data.projection.incomingCents + data.projection.spentCents > 0 && <Projection s={data} />}
 
           {data.upcoming.length > 0 && (
             <List header="Próximos ingresos">
@@ -130,6 +138,48 @@ export function FinanceHomePage() {
       )}
 
       {data && bucket && <BucketSheet s={data} bucket={bucket} onClose={() => setBucket(null)} />}
+    </div>
+  );
+}
+
+/** Con cuánto cerrarías el mes si llegan los ingresos previstos y sigues gastando igual en gustos. */
+function Projection({ s }: { s: FinSummary }) {
+  const p = s.projection;
+  const month = monthLabel(s.month).split(' ')[0]!.toLowerCase();
+  const tone = (c: number) => (c < 0 ? 'text-red' : undefined);
+  return (
+    <section>
+      <p className="px-4 pb-2 text-[13px] uppercase tracking-wide text-ink-2">Proyección a fin de {month}</p>
+      <div className="glass rounded-[26px] px-5 py-5">
+        <p className="text-[15px] text-ink-2">Cerrarías con</p>
+        <p className={cn('mt-1 text-[36px] font-semibold leading-none tracking-[-0.03em] tabular', tone(p.endCents))}>{formatMXN(p.endCents)}</p>
+        <div className="mt-4 space-y-2 text-[15px]">
+          <Row label="Entra en total" value={`+${formatMXN(p.incomingCents)}`} />
+          <Row label="Gastado hasta hoy" value={`−${formatMXN(p.spentCents)}`} />
+          {p.paceCents > 0 && <Row label={`Gustos estimados · ${p.daysLeft} ${p.daysLeft === 1 ? 'día' : 'días'}`} value={`−${formatMXN(p.paceCents)}`} />}
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-sep pt-4 text-center">
+          {(['SAVINGS', 'FIXED', 'FUN'] as Bucket[]).map((b) => (
+            <div key={b}>
+              <p className={cn('text-[17px] font-semibold tabular', tone(p.buckets[b]))}>{compact(p.buckets[b])}</p>
+              <p className="text-[13px] text-ink-2">{SHORT[b]}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-[13px] leading-snug text-ink-2">
+          Cuenta los ingresos por recibir con importe
+          {s.expectedUnknown > 0 && ` (${s.expectedUnknown} sin importe no se cuenta${s.expectedUnknown === 1 ? '' : 'n'})`} y estima tus gustos al ritmo que llevas este mes.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-ink-2">{label}</span>
+      <span className="tabular">{value}</span>
     </div>
   );
 }
