@@ -1,4 +1,4 @@
-# FORMA
+# ORGO
 
 Aplicación personal de recomposición corporal: peso y medidas, hidratación y refresco, hábitos,
 actividad, sueño y alimentación sencilla. Interfaz en español (México), mobile-first, modo claro/oscuro.
