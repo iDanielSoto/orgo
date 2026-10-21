@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountBalance, allocate, DEFAULT_SPLIT, formatMXN, monthProjection, monthSummary, ruleAt, toCents, type Movement } from './finance';
+import { accountBalance, allocate, bucketLedger, DEFAULT_SPLIT, formatMXN, monthProjection, monthSummary, ruleAt, toCents, type Movement } from './finance';
 
 describe('dinero en centavos', () => {
   it('convierte importes sin errores de punto flotante', () => {
@@ -112,5 +112,24 @@ describe('saldos y resumen mensual', () => {
     const s = monthSummary({ month: '2026-11', incomes, movements, budgetMoves: [], accounts });
     expect(s.receivedCents).toBe(0);
     expect(s.spentCents).toBe(0);
+  });
+});
+
+describe('bucketLedger', () => {
+  const inc = (id: string, receivedOn: string, alloc: { SAVINGS: number; FIXED: number; FUN: number }) =>
+    ({ id, name: id, amountCents: alloc.SAVINGS + alloc.FIXED + alloc.FUN, status: 'RECEIVED' as const, receivedOn, expectedOn: null, alloc });
+  const exp = (id: string, date: string, bucket: 'SAVINGS' | 'FIXED' | 'FUN', amountCents: number) =>
+    ({ id, kind: 'EXPENSE' as const, amountCents, date, accountId: null, toAccountId: null, bucket });
+
+  it('acumula lo que sobra (o falta) de un mes al siguiente', () => {
+    const l = bucketLedger({
+      upTo: '2026-10',
+      incomes: [inc('a', '2026-09-15', { SAVINGS: 7000, FIXED: 2000, FUN: 1000 }), inc('b', '2026-10-15', { SAVINGS: 7000, FIXED: 2000, FUN: 1000 })],
+      movements: [exp('x', '2026-09-20', 'FUN', 400), exp('y', '2026-10-02', 'FIXED', 2500), exp('z', '2026-11-01', 'FUN', 999)],
+      budgetMoves: [{ month: '2026-10', from: 'SAVINGS', to: 'FUN', amountCents: 500 }],
+    });
+    expect(l.map((m) => m.month)).toEqual(['2026-09', '2026-10']);
+    expect(l[0]!.balance).toEqual({ SAVINGS: 7000, FIXED: 2000, FUN: 600 });
+    expect(l[1]!.balance).toEqual({ SAVINGS: 13500, FIXED: 1500, FUN: 2100 });
   });
 });

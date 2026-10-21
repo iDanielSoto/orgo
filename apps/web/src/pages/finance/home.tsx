@@ -1,4 +1,4 @@
-import { BUCKET_LABEL, formatMXN, type Bucket } from '@forma/core';
+import { formatMXN, type Bucket } from '@forma/core';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
@@ -43,7 +43,7 @@ export function FinanceHomePage() {
   const profile = useProfile();
   const [month, setMonth] = React.useState<string | undefined>();
   const s = useFinSummary(month);
-  const [sheet, setSheet] = React.useState<'sobres' | 'proyeccion' | null>(null);
+  const [sheet, setSheet] = React.useState<Bucket | 'proyeccion' | null>(null);
   const data = s.data;
   const current = data?.month;
   const isNow = data ? data.month === data.today.slice(0, 7) : false;
@@ -77,16 +77,16 @@ export function FinanceHomePage() {
         <div className="space-y-10">
           {isNow ? <SpendToday s={data} /> : <MonthResult s={data} />}
           {(data.receivedCents > 0 || data.spentCents > 0) && <MonthBar s={data} />}
+          {data.ledger.length > 0 && <Accumulated s={data} onOpen={setSheet} />}
           <Movements txs={data.recent} />
           <List>
-            <Item label="Sobres" detail={`${data.rule.savingsBp / 100}/${data.rule.fixedBp / 100}/${data.rule.funBp / 100}`} onClick={() => setSheet('sobres')} />
             {isNow && data.projection.daysLeft > 0 && data.projection.incomingCents > 0 && <Item label="Cómo cerrarías el mes" detail={compact(data.projection.endCents)} onClick={() => setSheet('proyeccion')} />}
             <Item label="Importar Excel" onClick={() => navigate('/finanzas/importar')} />
           </List>
         </div>
       )}
 
-      {data && <EnvelopesSheet s={data} open={sheet === 'sobres'} onClose={() => setSheet(null)} />}
+      {data && <LedgerSheet s={data} bucket={sheet === 'proyeccion' ? null : sheet} onClose={() => setSheet(null)} />}
       {data && <ProjectionSheet s={data} open={sheet === 'proyeccion'} onClose={() => setSheet(null)} />}
     </div>
   );
@@ -200,48 +200,65 @@ export function TxAmount({ t }: { t: FinTx }) {
   return <span>−{formatMXN(t.amountCents)}</span>;
 }
 
-// --- Sobres (regla 70/20/10) ------------------------------------------------------
+// --- Sobres acumulados (regla 70/20/10) ------------------------------------------
 
-const BAR: Record<Bucket, string> = { SAVINGS: 'bg-green', FIXED: 'bg-tint', FUN: 'bg-star' };
+/** Cómo se llama cada sobre en el apartado: Gustos se muestra como lo que tienes disponible. */
+const LEDGER_LABEL: Record<Bucket, string> = { SAVINGS: 'Ahorro', FIXED: 'Gastos fijos', FUN: 'Disponible' };
+const DOT: Record<Bucket, string> = { SAVINGS: 'bg-green', FIXED: 'bg-tint', FUN: 'bg-star' };
 
-/** Cada sobre con su barra y una frase normal: cuánto queda o cuánto te pasaste. */
-function EnvelopesSheet({ s, open, onClose }: { s: FinSummary; open: boolean; onClose: () => void }) {
-  const navigate = useNavigate();
-  const phrase = (b: Bucket) => {
-    const st = s.buckets[b];
-    if (b === 'SAVINGS') {
-      const toSet = st.assigned - s.savingsSeparatedCents;
-      return toSet > 0 ? `Aparta ${compact(toSet)}` : 'Ya apartaste tu ahorro';
-    }
-    return st.remaining >= 0 ? `Quedan ${compact(st.remaining)}` : `Te pasaste ${compact(-st.remaining)}`;
-  };
+/** Lo que llevas en cada sobre sumando todos los meses: lo que no gastas se acumula. */
+function Accumulated({ s, onOpen }: { s: FinSummary; onOpen: (b: Bucket) => void }) {
+  const bal = s.ledger.at(-1)!.balance;
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()} title="Sobres">
-      <div className="space-y-6 px-1">
-        {(['FUN', 'FIXED', 'SAVINGS'] as Bucket[]).map((b) => {
-          const st = s.buckets[b];
-          const used = b === 'SAVINGS' ? s.savingsSeparatedCents : st.used;
-          const pct = st.assigned > 0 ? used / st.assigned : used > 0 ? 1 : 0;
-          const over = b !== 'SAVINGS' && st.remaining < 0;
-          return (
-            <section key={b}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[17px] font-semibold">{BUCKET_LABEL[b]}</span>
-                <span className={cn('text-[17px] tabular', over ? 'text-red' : 'text-ink-2')}>{phrase(b)}</span>
-              </div>
-              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-fill">
-                <div className={cn('h-full rounded-full', over ? 'bg-red' : BAR[b])} style={{ width: `${Math.min(1, pct) * 100}%` }} />
-              </div>
-              <p className="mt-1.5 text-[13px] text-ink-3 tabular">
-                {compact(used)} de {compact(st.assigned)}
-              </p>
-              {over && st.overCauses.length > 0 && (
-                <p className="mt-1 text-[13px] text-ink-2">Lo más grande: {st.overCauses.map((c) => `${c.concept} ${compact(c.amountCents)}`).join(' · ')}</p>
-              )}
-            </section>
-          );
-        })}
+    <List header="Acumulado">
+      {(['SAVINGS', 'FIXED', 'FUN'] as Bucket[]).map((b) => (
+        <Item
+          key={b}
+          label={
+            <span className="flex items-center gap-3">
+              <span className={cn('size-2.5 rounded-full', DOT[b])} />
+              {LEDGER_LABEL[b]}
+            </span>
+          }
+          detail={<span className={cn('font-semibold text-ink', bal[b] < 0 && 'text-red')}>{compact(bal[b])}</span>}
+          onClick={() => onOpen(b)}
+        />
+      ))}
+    </List>
+  );
+}
+
+/** Un sobre mes por mes: lo que entró, lo que salió y con cuánto cerró. */
+function LedgerSheet({ s, bucket, onClose }: { s: FinSummary; bucket: Bucket | null; onClose: () => void }) {
+  const navigate = useNavigate();
+  const b = bucket ?? 'SAVINGS';
+  const months = [...s.ledger].reverse();
+  const total = s.ledger.at(-1)?.balance[b] ?? 0;
+  const now = s.ledger.find((m) => m.month === s.month);
+  return (
+    <Sheet open={bucket !== null} onOpenChange={(o) => !o && onClose()} title={LEDGER_LABEL[b]}>
+      <div className="py-2 text-center">
+        <p className="text-[17px] text-ink-2">Llevas</p>
+        <p className={cn('mt-1 text-[52px] font-semibold leading-none tracking-[-0.04em] tabular', total < 0 && 'text-red')}>{compact(total)}</p>
+        {now && (
+          <p className="mt-3 text-[15px] text-ink-2 tabular">
+            Este mes +{compact(now.in[b])} · −{compact(now.out[b])}
+          </p>
+        )}
       </div>
+      <List header="Mes por mes">
+        {months.map((m) => (
+          <div key={m.month} className="flex min-h-[60px] items-center gap-3 px-5 py-2.5">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px]">{capitalize(monthLabel(m.month))}</span>
+              <span className="block text-[13px] text-ink-3 tabular">
+                +{compact(m.in[b])} · −{compact(m.out[b])}
+              </span>
+            </span>
+            <span className={cn('text-[17px] tabular', m.balance[b] < 0 ? 'text-red' : 'text-ink')}>{compact(m.balance[b])}</span>
+          </div>
+        ))}
+      </List>
       <List>
         <Item label="Cambiar reparto" detail={`${s.rule.savingsBp / 100}/${s.rule.fixedBp / 100}/${s.rule.funBp / 100}`} onClick={() => navigate('/finanzas/presupuesto')} />
       </List>

@@ -298,3 +298,50 @@ export function monthProjection(input: {
   const incomingCents = s.receivedCents + s.expectedCents;
   return { daysLeft, incomingCents, spentCents: s.spentCents, paceCents, endCents: incomingCents - s.spentCents - paceCents, buckets };
 }
+
+// --- Sobres acumulados -------------------------------------------------------------
+
+export interface LedgerMonth {
+  month: string;
+  /** Lo que entró a cada sobre ese mes (ingresos repartidos ± movimientos entre sobres). */
+  in: Allocation;
+  /** Lo que salió de cada sobre ese mes (gastos con ese presupuesto). */
+  out: Allocation;
+  /** Saldo acumulado de cada sobre al cerrar ese mes. */
+  balance: Allocation;
+}
+
+/**
+ * Sobres acumulativos: lo que no se usa en un mes pasa al siguiente (y lo excedido también).
+ * Devuelve cada mes con movimiento hasta `upTo` (YYYY-MM), del más antiguo al más reciente.
+ */
+export function bucketLedger(input: { upTo: string; incomes: IncomeLike[]; movements: Movement[]; budgetMoves: BudgetMove[] }): LedgerMonth[] {
+  const months = new Map<string, { in: Allocation; out: Allocation }>();
+  const at = (m: string) => {
+    let e = months.get(m);
+    if (!e) months.set(m, (e = { in: { SAVINGS: 0, FIXED: 0, FUN: 0 }, out: { SAVINGS: 0, FIXED: 0, FUN: 0 } }));
+    return e;
+  };
+  for (const inc of input.incomes) {
+    if (inc.status !== 'RECEIVED' || !inc.receivedOn || !inc.alloc || monthOf(inc.receivedOn) > input.upTo) continue;
+    const e = at(monthOf(inc.receivedOn));
+    for (const b of BUCKETS) e.in[b] += inc.alloc[b];
+  }
+  for (const t of input.budgetMoves) {
+    if (t.month > input.upTo) continue;
+    const e = at(t.month);
+    if (t.from !== 'NONE') e.in[t.from] -= t.amountCents;
+    if (t.to !== 'NONE') e.in[t.to] += t.amountCents;
+  }
+  for (const m of input.movements) {
+    if (m.kind !== 'EXPENSE' || m.bucket === 'NONE' || monthOf(m.date) > input.upTo) continue;
+    at(monthOf(m.date)).out[m.bucket] += m.amountCents;
+  }
+  const balance: Allocation = { SAVINGS: 0, FIXED: 0, FUN: 0 };
+  return [...months.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, e]) => {
+      for (const b of BUCKETS) balance[b] += e.in[b] - e.out[b];
+      return { month, in: e.in, out: e.out, balance: { ...balance } };
+    });
+}

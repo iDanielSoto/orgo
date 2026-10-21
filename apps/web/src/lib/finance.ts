@@ -101,6 +101,8 @@ export interface FinSummary {
     buckets: Record<Bucket, number>;
   };
   rule: Split;
+  /** Sobres acumulativos: últimos 12 meses con movimiento, el saldo de cada uno al cierre. */
+  ledger: { month: string; in: Record<Bucket, number>; out: Record<Bucket, number>; balance: Record<Bucket, number> }[];
 }
 
 export interface FinCategory {

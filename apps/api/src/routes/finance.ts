@@ -5,6 +5,7 @@ import {
   accountUpdateSchema,
   addDays,
   allocate,
+  bucketLedger,
   budgetRuleSchema,
   budgetTransferSchema,
   dateKeyToUtc,
@@ -138,13 +139,16 @@ financeRouter.get('/finance/summary', async (req, res) => {
   const ctx = await loadContext(userId);
   const month = parse(monthQuery, req.query).month ?? ctx.today.slice(0, 7);
   const { from, to } = monthRange(month);
-  const [accounts, txs, incomes, moves] = await Promise.all([
+  const [accounts, txs, incomes, allMoves] = await Promise.all([
     prisma.financialAccount.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
     // Saldos: todos los movimientos hasta el fin del mes.
     prisma.transaction.findMany({ where: { userId, localDate: { lte: dateKeyToUtc(to) } }, include: { category: { select: { name: true } } }, orderBy: { occurredAt: 'desc' } }),
     prisma.income.findMany({ where: { userId } }),
-    prisma.budgetTransfer.findMany({ where: { userId, month: dateKeyToUtc(from) } }),
+    // Hasta este mes: los sobres son acumulativos.
+    prisma.budgetTransfer.findMany({ where: { userId, month: { lte: dateKeyToUtc(from) } } }),
   ]);
+  const toMove = (m: (typeof allMoves)[number]) => ({ month: dateKey(m.month).slice(0, 7), from: m.fromBucket, to: m.toBucket, amountCents: m.amountCents });
+  const moves = allMoves.filter((m) => dateKey(m.month) === from);
   const incomeLikes = incomes.map((i) => {
     const s = serializeIncome(i);
     return { id: s.id, name: s.name, amountCents: s.amountCents, status: s.status, receivedOn: s.receivedOn, expectedOn: s.expectedOn, alloc: s.alloc, split: s.split };
@@ -154,8 +158,9 @@ financeRouter.get('/finance/summary', async (req, res) => {
     accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, openingCents: a.openingBalanceCents, archived: Boolean(a.archivedAt) })),
     movements: txs.map(toMovement),
     incomes: incomeLikes,
-    budgetMoves: moves.map((m) => ({ month, from: m.fromBucket, to: m.toBucket, amountCents: m.amountCents })),
+    budgetMoves: moves.map(toMove),
   });
+  const ledger = bucketLedger({ upTo: month, incomes: incomeLikes, movements: txs.map(toMovement), budgetMoves: allMoves.map(toMove) }).slice(-12);
   const rule = ruleAt(await rulesOf(prisma, userId), ctx.today);
   const projection = monthProjection({ summary, today: ctx.today, incomes: incomeLikes, split: rule });
   const upcoming = incomes
@@ -172,6 +177,7 @@ financeRouter.get('/finance/summary', async (req, res) => {
     upcoming,
     projection,
     rule,
+    ledger,
   });
 });
 
