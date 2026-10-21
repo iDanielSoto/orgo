@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import {
   ACTIVITY_LABEL,
+  addDays,
   computeNextStep,
+  dateKeySchema,
   dateKeyToUtc,
   nextReviewDate,
   parseClock,
@@ -14,6 +17,7 @@ import {
 } from '@forma/core';
 import { prisma } from '../db';
 import { uid } from '../lib/auth';
+import { HttpError, parse } from '../lib/http';
 import { dateKey, num, numReq } from '../lib/serialize';
 import { loadContext, requireProfile } from '../services/context';
 import { buildDayAggregates } from '../services/days';
@@ -22,12 +26,18 @@ import { habitStatuses } from './habits';
 
 export const todayRouter = Router();
 
-/** Todo lo que necesita la pantalla "Mi día" en una sola petición. */
+/**
+ * Todo lo que necesita la pantalla "Mi día" en una sola petición. Con ?date= arma el mismo
+ * resumen para un día pasado (el historial del calendario).
+ */
 todayRouter.get('/today', async (req, res) => {
   const userId = uid(req);
   const ctx = await loadContext(userId);
   const profile = requireProfile(ctx);
-  const { today, settings } = ctx;
+  const { settings } = ctx;
+  const q = parse(z.object({ date: dateKeySchema.optional() }), req.query);
+  if (q.date && q.date > ctx.today) throw new HttpError(400, 'Ese día aún no llega');
+  const today = q.date ?? ctx.today;
   const start = profile.programStart;
   const firstReview = dateKey(profile.firstReviewDate);
 
@@ -124,4 +134,37 @@ todayRouter.get('/today', async (req, res) => {
     })),
     nextStep,
   });
+});
+
+/**
+ * Cumplimiento por día para el calendario: promedio de agua, comidas, sueño y actividad
+ * (la actividad sólo cuenta en días de fuerza o caminata). null = antes del programa o sin llegar.
+ */
+todayRouter.get('/days', async (req, res) => {
+  const ctx = await loadContext(uid(req));
+  const profile = requireProfile(ctx);
+  const q = parse(z.object({ from: dateKeySchema, to: dateKeySchema }), req.query);
+  const from = q.from < profile.programStart ? profile.programStart : q.from;
+  const to = q.to > ctx.today ? ctx.today : q.to;
+  if (from > to) return void res.json([]);
+  if (addDays(from, 400) < to) throw new HttpError(400, 'Rango demasiado largo');
+  const agg = await buildDayAggregates(ctx, from, to);
+  res.json(
+    agg.map((d) => {
+      const parts = [
+        d.waterGoalMl ? Math.min(1, d.waterMl / d.waterGoalMl) : d.waterMl > 0 ? 1 : 0,
+        Math.min(1, d.mainMealsLogged / 3),
+        d.sleepMinutes === null ? 0 : Math.min(1, d.sleepMinutes / d.sleepTargetMinutes),
+      ];
+      if (d.plannedKind === 'STRENGTH' || d.plannedKind === 'WALK_MOBILITY') parts.push(d.activityDone ? 1 : 0);
+      return {
+        date: d.date,
+        score: round(parts.reduce((a, b) => a + b, 0) / parts.length, 2),
+        waterMl: d.waterMl,
+        meals: d.mainMealsLogged,
+        sleepMinutes: d.sleepMinutes,
+        activityDone: d.activityDone,
+      };
+    }),
+  );
 });

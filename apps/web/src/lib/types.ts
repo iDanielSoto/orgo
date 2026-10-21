@@ -47,6 +47,16 @@ export interface Today {
   nextStep: NextStep;
 }
 
+/** Cumplimiento de un día para el calendario (0–1). */
+export interface DayScore {
+  date: string;
+  score: number;
+  waterMl: number;
+  meals: number;
+  sleepMinutes: number | null;
+  activityDone: boolean;
+}
+
 export interface Profile {
   profile: {
     displayName: string;

@@ -5,6 +5,7 @@ import type {
   ActivityEntry,
   ActivityPlan,
   BodySummary,
+  DayScore,
   Habit,
   HabitStat,
   HydrationDay,
@@ -21,6 +22,8 @@ import type {
 export const keys = {
   me: ['me'] as const,
   today: ['today'] as const,
+  day: (date: string) => ['today', date] as const,
+  days: (from: string, to: string) => ['days', from, to] as const,
   profile: ['profile'] as const,
   measurements: ['measurements'] as const,
   body: ['body'] as const,
@@ -51,6 +54,15 @@ export const useMe = () =>
   });
 
 export const useToday = () => useQuery({ queryKey: keys.today, queryFn: () => api.get<Today>('/today'), refetchInterval: 5 * 60_000 });
+/** El resumen de un día pasado (sin fecha = hoy, con refresco periódico). */
+export const useDay = (date: string | null) =>
+  useQuery({
+    queryKey: date ? keys.day(date) : keys.today,
+    queryFn: () => api.get<Today>(`/today${date ? `?date=${date}` : ''}`),
+    refetchInterval: date ? false : 5 * 60_000,
+  });
+export const useDays = (from: string, to: string) =>
+  useQuery({ queryKey: keys.days(from, to), queryFn: () => api.get<DayScore[]>(`/days?from=${from}&to=${to}`), placeholderData: (prev) => prev });
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => api.get<Profile>('/profile') });
 export const useMeasurements = () =>
   useQuery({ queryKey: keys.measurements, queryFn: () => api.get<Measurement[]>('/measurements') });
@@ -105,6 +117,7 @@ export function useAction<TVars, TResult = unknown>(
 /** Casi cualquier registro influye en Mi día y en los hábitos automáticos. */
 export const ALL_DATA: QueryKey[] = [
   keys.today,
+  ['days'],
   ['hydration'],
   ['habits'],
   keys.body,

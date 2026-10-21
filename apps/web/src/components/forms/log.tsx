@@ -7,14 +7,15 @@ import { fmtDuration, fmtNum, fmtTime } from '@/lib/format';
 import { keys, useAction, useHydrationDay, useMeals } from '@/lib/queries';
 import type { Meal, SleepEntry, Today } from '@/lib/types';
 
+/** `date` (AAAA-MM-DD) registra en un día pasado del calendario; sin ella, ahora. */
 export type LogRequest =
-  | { kind: 'water' }
-  | { kind: 'soda' }
+  | { kind: 'water'; date?: string }
+  | { kind: 'soda'; date?: string }
   | { kind: 'weight' }
-  | { kind: 'sleep'; edit?: SleepEntry }
+  | { kind: 'sleep'; edit?: SleepEntry; date?: string }
   | { kind: 'meals' }
-  | { kind: 'meal'; edit?: Meal; type?: MealType }
-  | { kind: 'activity'; routine?: 'A' | 'B' | 'WALK' | null };
+  | { kind: 'meal'; edit?: Meal; type?: MealType; date?: string }
+  | { kind: 'activity'; routine?: 'A' | 'B' | 'WALK' | null; date?: string };
 
 const LogContext = React.createContext<(req: LogRequest) => void>(() => undefined);
 export const useLog = () => React.useContext(LogContext);
@@ -34,13 +35,13 @@ export function LogProvider({ children }: { children: React.ReactNode }) {
     <LogContext.Provider value={show}>
       {children}
       <React.Fragment key={n}>
-        {req?.kind === 'water' && <DrinkSheet {...props} type="WATER" />}
-        {req?.kind === 'soda' && <DrinkSheet {...props} type="SODA_REGULAR" />}
+        {req?.kind === 'water' && <DrinkSheet {...props} type="WATER" date={req.date} />}
+        {req?.kind === 'soda' && <DrinkSheet {...props} type="SODA_REGULAR" date={req.date} />}
         {req?.kind === 'weight' && <WeightSheet {...props} />}
-        {req?.kind === 'sleep' && <SleepSheet {...props} edit={req.edit} />}
+        {req?.kind === 'sleep' && <SleepSheet {...props} edit={req.edit} date={req.date} />}
         {req?.kind === 'meals' && <MealsSheet {...props} />}
-        {req?.kind === 'meal' && <MealSheet {...props} edit={req.edit} type={req.type} />}
-        {req?.kind === 'activity' && <ActivitySheet {...props} routine={req.routine ?? null} />}
+        {req?.kind === 'meal' && <MealSheet {...props} edit={req.edit} type={req.type} date={req.date} />}
+        {req?.kind === 'activity' && <ActivitySheet {...props} routine={req.routine ?? null} date={req.date} />}
       </React.Fragment>
     </LogContext.Provider>
   );
@@ -55,16 +56,25 @@ interface SheetProps {
 
 const nowIso = () => new Date().toISOString();
 
+/** Momento para un registro: ahora, o a la hora indicada del día pasado `date`. */
+export function atIso(date: string | undefined, hh = 12, mm = 0) {
+  if (!date) return nowIso();
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(y, m - 1, d, hh, mm).toISOString();
+}
+
+const MEAL_HOUR: Record<MealType, number> = { BREAKFAST: 9, LUNCH: 14, SNACK: 17, DINNER: 20 };
+
 function useToday() {
   return useQueryClient().getQueryData<Today>(keys.today);
 }
 
 // --- Agua y refresco ------------------------------------------------------------
 
-function DrinkSheet({ open, onOpenChange, type }: SheetProps & { type: 'WATER' | 'SODA_REGULAR' }) {
-  const day = useHydrationDay();
+function DrinkSheet({ open, onOpenChange, type, date }: SheetProps & { type: 'WATER' | 'SODA_REGULAR'; date?: string }) {
+  const day = useHydrationDay(date);
   const glass = day.data?.glassSizeMl ?? 355;
-  const add = useAction((ml: number) => api.post('/beverages', { id: newId(), type, volumeMl: ml, loggedAt: nowIso() }), {
+  const add = useAction((ml: number) => api.post('/beverages', { id: newId(), type, volumeMl: ml, loggedAt: atIso(date) }), {
     success: (_r, ml) => (type === 'WATER' ? `+${ml} ml` : 'Refresco registrado'),
   });
   const del = useAction((id: string) => api.del(`/beverages/${id}`), { success: 'Eliminado' });
@@ -89,7 +99,7 @@ function DrinkSheet({ open, onOpenChange, type }: SheetProps & { type: 'WATER' |
         )}
       </div>
       {logs.length > 0 && (
-        <List header="Hoy">
+        <List header={date ? undefined : 'Hoy'}>
           {logs.map((l) => (
             <Item
               key={l.id}
@@ -137,7 +147,7 @@ const hhmm = (iso: string) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-function SleepSheet({ open, onOpenChange, onClose, edit }: SheetProps & { edit?: SleepEntry }) {
+function SleepSheet({ open, onOpenChange, onClose, edit, date }: SheetProps & { edit?: SleepEntry; date?: string }) {
   const [bed, setBed] = React.useState(edit ? hhmm(edit.bedtime) : '02:00');
   const [wake, setWake] = React.useState(edit ? hhmm(edit.wakeTime) : '09:30');
   const [quality, setQuality] = React.useState<number | null>(edit?.quality ?? null);
@@ -145,7 +155,7 @@ function SleepSheet({ open, onOpenChange, onClose, edit }: SheetProps & { edit?:
   const minutes = valid ? clockSleepMinutes(bed, wake) : 0;
   const save = useAction(
     () => {
-      const w = edit ? new Date(edit.wakeTime) : new Date();
+      const w = edit ? new Date(edit.wakeTime) : new Date(atIso(date));
       const [wh, wm] = wake.split(':').map(Number) as [number, number];
       const [bh, bm] = bed.split(':').map(Number) as [number, number];
       w.setHours(wh, wm, 0, 0);
@@ -207,8 +217,8 @@ function guessMeal(): MealType {
   return 'SNACK';
 }
 
-function MealSheet({ open, onOpenChange, onClose, edit, type: preset }: SheetProps & { edit?: Meal; type?: MealType }) {
-  const [type, setType] = React.useState<MealType>(edit?.type ?? preset ?? guessMeal());
+function MealSheet({ open, onOpenChange, onClose, edit, type: preset, date }: SheetProps & { edit?: Meal; type?: MealType; date?: string }) {
+  const [type, setType] = React.useState<MealType>(edit?.type ?? preset ?? (date ? 'LUNCH' : guessMeal()));
   const [desc, setDesc] = React.useState(edit?.description ?? '');
   const [protein, setProtein] = React.useState(Boolean(edit?.proteinSource));
   const save = useAction(
@@ -218,7 +228,7 @@ function MealSheet({ open, onOpenChange, onClose, edit, type: preset }: SheetPro
         description: desc.trim(),
         // Se conserva la fuente si ya existía; si no, basta con saber que hubo proteína.
         proteinSource: protein ? (edit?.proteinSource ?? 'Sí') : null,
-        eatenAt: edit?.eatenAt ?? nowIso(),
+        eatenAt: edit?.eatenAt ?? atIso(date, MEAL_HOUR[type]),
         hasFruit: edit?.hasFruit ?? false,
         hasVegetables: edit?.hasVegetables ?? false,
       };
@@ -245,7 +255,7 @@ function MealSheet({ open, onOpenChange, onClose, edit, type: preset }: SheetPro
 
 // --- Actividad ----------------------------------------------------------------------
 
-function ActivitySheet({ open, onOpenChange, onClose, routine }: SheetProps & { routine: 'A' | 'B' | 'WALK' | null }) {
+function ActivitySheet({ open, onOpenChange, onClose, routine, date }: SheetProps & { routine: 'A' | 'B' | 'WALK' | null; date?: string }) {
   const [what, setWhat] = React.useState<'A' | 'B' | 'WALK' | null>(routine);
   const [minutes, setMinutes] = React.useState(routine === 'WALK' ? '15' : '30');
   const [pain, setPain] = React.useState(false);
@@ -257,7 +267,7 @@ function ActivitySheet({ open, onOpenChange, onClose, routine }: SheetProps & { 
         id: newId(),
         kind: what === 'WALK' ? 'WALK' : 'STRENGTH',
         routineCode: what === 'WALK' ? null : what,
-        performedAt: new Date(Date.now() - m * 60_000).toISOString(),
+        performedAt: new Date((date ? Date.parse(atIso(date, 18)) : Date.now()) - m * 60_000).toISOString(),
         durationMinutes: m,
         pain,
         excessiveFatigue: tired,

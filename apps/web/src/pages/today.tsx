@@ -1,13 +1,16 @@
 import { parseClock, type MealType } from '@forma/core';
-import { Plus } from 'lucide-react';
+import { addDays, addMonths, addWeeks, endOfMonth, format, getDay, parseISO, startOfMonth, startOfWeek, subDays, subMonths, subWeeks } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { Avatar } from '@/components/avatar';
+import { DayRing } from '@/components/day-ring';
 import { BreathFill, GlassBubble, Liquid, NightFill, PlateFill, RingFill } from '@/components/bubbles';
-import { useLog, type LogRequest } from '@/components/forms/log';
-import { LargeTitle } from '@/components/ui/ios';
+import { atIso, useLog, type LogRequest } from '@/components/forms/log';
+import { GlassCircle, LargeTitle, Sheet } from '@/components/ui/ios';
 import { capitalize, cn, fmtDate, fmtDuration, fmtNum, fmtTime } from '@/lib/format';
-import { useAction, useActivityPlan, useMeals, useProfile, useToday } from '@/lib/queries';
+import { useAction, useActivityPlan, useDay, useDays, useMeals, useProfile } from '@/lib/queries';
 import { api, newId } from '@/lib/api';
 import type { Meal, Today } from '@/lib/types';
 
@@ -66,21 +69,24 @@ function useClockMinutes() {
 /**
  * Arma la línea del día. El día empieza a la mitad de tu sueño (schedule.dayStart), no a
  * medianoche; las comidas se ubican a partir de tu despertar real si ya lo registraste.
+ * Sin reloj (`clock` null) es un día pasado: todo quedó atrás y lo que agregues va a esa fecha.
  */
-function buildDay(t: Today, meals: Meal[], clock: number): Entry[] {
+function buildDay(t: Today, meals: Meal[], clock: number | null): Entry[] {
   const start = t.schedule.dayStart;
   const since = (m: number) => (((m - start) % 1440) + 1440) % 1440;
   const wakeClock = t.sleep ? minutesOf(t.sleep.wakeTime) : parseClock(t.schedule.wake);
   const wakeAt = since(wakeClock);
-  const now = since(clock);
+  const over = clock === null;
+  const now = over ? 1440 : since(clock);
   const past = (at: number) => at < now;
+  const d = over ? { date: t.date } : {};
   const out: Entry[] = [];
 
   // Despertar
   out.push(
     t.sleep
       ? { key: 'wake', at: wakeAt, time: fmtTime(t.sleep.wakeTime), title: 'Despertar', detail: fmtDuration(t.sleep.durationMinutes), state: 'done', open: { kind: 'sleep', edit: { ...t.sleep, date: t.date, note: null } } }
-      : { key: 'wake', at: wakeAt, time: t.schedule.wake, title: 'Despertar', detail: '¿Cómo dormiste?', state: 'next', add: { kind: 'sleep' } },
+      : { key: 'wake', at: wakeAt, time: t.schedule.wake, title: 'Despertar', detail: '¿Cómo dormiste?', state: over ? 'missed' : 'next', add: { kind: 'sleep', ...d } },
   );
 
   // Actividad del día
@@ -95,7 +101,7 @@ function buildDay(t: Today, meals: Meal[], clock: number): Entry[] {
       detail: a.done ? 'Hecho' : a.kind === 'WALK_MOBILITY' ? `${a.level.walkMinutesMin}–${a.level.walkMinutesMax} min` : '30 min',
       state: a.done ? 'done' : past(trainAt + 120) ? 'missed' : 'next',
       open: 'activity',
-      add: a.done ? undefined : { kind: 'activity', routine: a.kind === 'WALK_MOBILITY' ? 'WALK' : a.routine },
+      add: a.done ? undefined : { kind: 'activity', routine: a.kind === 'WALK_MOBILITY' ? 'WALK' : a.routine, ...d },
     });
   } else {
     out.push({ key: 'activity', at: trainAt, time: t.schedule.training, title: a.label, state: 'rest', open: 'activity' });
@@ -109,36 +115,37 @@ function buildDay(t: Today, meals: Meal[], clock: number): Entry[] {
         out.push({ key: x.id, at: since(minutesOf(x.eatenAt)), time: fmtTime(x.eatenAt), title: m.label, detail: x.description, state: 'done', open: { kind: 'meal', edit: x } });
     } else {
       const at = wakeAt + m.after;
-      out.push({ key: m.type, at, time: toClock(wakeClock + m.after), title: m.label, state: past(at + 120) ? 'missed' : 'next', add: { kind: 'meal', type: m.type } });
+      out.push({ key: m.type, at, time: toClock(wakeClock + m.after), title: m.label, state: past(at + 120) ? 'missed' : 'next', add: { kind: 'meal', type: m.type, ...d } });
     }
   }
   for (const x of meals.filter((x) => x.type === 'SNACK'))
     out.push({ key: x.id, at: since(minutesOf(x.eatenAt)), time: fmtTime(x.eatenAt), title: 'Snack', detail: x.description, state: 'done', open: { kind: 'meal', edit: x } });
 
-  // Agua y refresco: van "ahora", durante todo el día.
+  // Agua y refresco: van "ahora", durante todo el día (en días pasados, tras el despertar).
   const h = t.hydration;
+  const drinksAt = over ? wakeAt + 1 : now;
   out.push({
     key: 'water',
-    at: now,
-    time: 'ahora',
+    at: drinksAt,
+    time: over ? '' : 'ahora',
     title: 'Agua',
     detail: h.waterGoalMl ? `${fmtNum(h.waterMl / 1000)} / ${fmtNum(h.waterGoalMl / 1000)} L` : `${fmtNum(h.waterMl / 1000)} L`,
-    state: h.waterGoalMl && h.waterMl >= h.waterGoalMl ? 'done' : 'now',
-    open: { kind: 'water' },
+    state: h.waterGoalMl && h.waterMl >= h.waterGoalMl ? 'done' : over ? 'missed' : 'now',
+    open: { kind: 'water', ...d },
   });
   out.push({
     key: 'soda',
-    at: now + 0.5,
+    at: drinksAt + 0.5,
     time: '',
     title: 'Refresco',
     detail: h.sodaMaxGlasses !== null ? `${fmtNum(h.sodaGlasses)} de ${h.sodaMaxGlasses} vasos` : `${fmtNum(h.sodaGlasses)} vasos`,
-    state: 'next',
-    open: { kind: 'soda' },
+    state: over ? 'rest' : 'next',
+    open: { kind: 'soda', ...d },
   });
 
   // Dormir
   const bed = since(parseClock(t.schedule.bed));
-  out.push({ key: 'bed', at: bed, time: t.schedule.bed, title: 'Dormir', detail: bed - now <= 60 && bed > now ? 'Prepárate' : undefined, state: 'next' });
+  out.push({ key: 'bed', at: bed, time: t.schedule.bed, title: 'Dormir', detail: bed - now <= 60 && bed > now ? 'Prepárate' : undefined, state: over ? 'rest' : 'next' });
 
   return out.sort((x, y) => x.at - y.at);
 }
@@ -166,25 +173,36 @@ function focusIndex(entries: Entry[], t: Today, clock: number): number {
 }
 
 export function TodayPage() {
-  const today = useToday();
-  const meals = useMeals();
+  const today = useDay(null);
+  const [sel, setSel] = React.useState<string | null>(null);
+  const day = useDay(sel);
+  const meals = useMeals(sel ?? undefined);
   const profile = useProfile();
   const navigate = useNavigate();
-  const t = today.data;
+  const [month, setMonth] = React.useState(false);
+  const t = day.data;
+  const todayKey = today.data?.date;
   const clock = useClockMinutes();
-  const entries = React.useMemo(() => (t ? buildDay(t, meals.data ?? [], clock) : []), [t, meals.data, clock]);
+  const past = sel !== null;
+  const entries = React.useMemo(() => (t ? buildDay(t, meals.data ?? [], past ? null : clock) : []), [t, meals.data, clock, past]);
+  const pick = (d: string) => setSel(d === todayKey ? null : d);
 
   return (
     <div>
       <LargeTitle
-        text="Hoy"
+        text={!t || !past ? 'Hoy' : sel === (todayKey && toKey(subDays(parseISO(todayKey), 1))) ? 'Ayer' : capitalize(fmtDate(sel, 'EEEE d'))}
         trailing={
           <button aria-label="Inicio" onClick={() => navigate('/')} className="press">
             <Avatar version={profile.data?.profile?.avatarVersion} size={44} />
           </button>
         }
       />
-      {t && <p className="-mt-6 text-[17px] text-ink-2">{capitalize(fmtDate(t.date))}</p>}
+      {t && (
+        <button onClick={() => setMonth(true)} className="press -mt-6 flex items-center gap-1 text-[17px] text-ink-2">
+          {capitalize(fmtDate(t.date, "d 'de' MMMM"))}
+          <ChevronDown className="size-4" strokeWidth={2.5} />
+        </button>
+      )}
 
       {today.isError && (
         <button onClick={() => today.refetch()} className="mt-6 text-[15px] text-red">
@@ -192,133 +210,199 @@ export function TodayPage() {
         </button>
       )}
 
-      {t && entries.length > 0 && <Wheel t={t} entries={entries} meals={meals.data ?? []} initial={focusIndex(entries, t, clock)} clock={clock} />}
+      {today.data && <WeekStrip today={today.data.date} start={today.data.program.start} selected={sel ?? today.data.date} onPick={pick} />}
+
+      {t && entries.length > 0 && <Pager key={t.date} t={t} entries={entries} meals={meals.data ?? []} initial={past ? 0 : focusIndex(entries, t, clock)} clock={past ? null : clock} />}
+
+      {today.data && (
+        <MonthSheet
+          open={month}
+          onOpenChange={setMonth}
+          today={today.data.date}
+          start={today.data.program.start}
+          selected={sel ?? today.data.date}
+          onPick={(d) => {
+            pick(d);
+            setMonth(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// --- Rueda del día ----------------------------------------------------------------
+// --- Calendario -------------------------------------------------------------------
 
-const ITEM = 96; // alto de cada renglón (px)
-const CARD = 236; // alto de la tarjeta viva del centro (px)
+const toKey = (d: Date) => format(d, 'yyyy-MM-dd');
+const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const weekStart = (key: string) => startOfWeek(parseISO(key), { weekStartsOn: 1 });
+
+/** Anillo de cumplimiento del día con el número al centro (como Actividad de iOS). */
+function DayCell({ date, score, selected, isToday, disabled, onPick }: { date: string; score: number | undefined; selected: boolean; isToday: boolean; disabled: boolean; onPick: () => void }) {
+  return (
+    <button
+      onClick={onPick}
+      disabled={disabled}
+      aria-label={capitalize(fmtDate(date))}
+      aria-pressed={selected}
+      className="press relative mx-auto grid size-11 place-items-center disabled:opacity-30"
+    >
+      <span className="absolute inset-0">
+        <DayRing score={score} track={!disabled} />
+      </span>
+      <span
+        className={cn(
+          'relative grid size-[30px] place-items-center rounded-full text-[15px] font-semibold tabular',
+          selected ? 'bg-ink text-[#000]' : isToday ? 'text-tint' : 'text-ink',
+        )}
+      >
+        {Number(date.slice(8))}
+      </span>
+    </button>
+  );
+}
+
+/** Semanas de lunes a domingo que pasas de lado; al abrir, la del día elegido. */
+function WeekStrip({ today, start, selected, onPick }: { today: string; start: string; selected: string; onPick: (d: string) => void }) {
+  const first = React.useMemo(() => {
+    const s = weekStart(start);
+    const limit = subWeeks(weekStart(today), 25);
+    return s < limit ? limit : s;
+  }, [start, today]);
+  const weeks = React.useMemo(() => {
+    const out: string[][] = [];
+    for (let w = first; w <= parseISO(today); w = addWeeks(w, 1)) out.push(Array.from({ length: 7 }, (_, i) => toKey(addDays(w, i))));
+    return out;
+  }, [first, today]);
+  const scores = useDays(toKey(first), today);
+  const byDate = React.useMemo(() => new Map(scores.data?.map((d) => [d.date, d.score])), [scores.data]);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const selWeek = weeks.findIndex((w) => w.includes(selected));
+
+  React.useLayoutEffect(() => {
+    const box = ref.current;
+    if (box && selWeek >= 0) box.scrollTo({ left: selWeek * box.clientWidth, behavior: box.scrollLeft ? 'smooth' : 'instant' });
+  }, [selWeek]);
+
+  return (
+    <div className="-mx-5 mt-5">
+      <div className="grid grid-cols-7 px-5 text-center text-[12px] font-medium text-ink-3">
+        {WEEKDAYS.map((d, i) => (
+          <span key={i}>{d}</span>
+        ))}
+      </div>
+      <div ref={ref} className="flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain">
+        {weeks.map((w) => (
+          <div key={w[0]} className="grid w-full shrink-0 snap-start grid-cols-7 px-5 pt-1.5">
+            {w.map((d) => (
+              <DayCell key={d} date={d} score={byDate.get(d)} selected={d === selected} isToday={d === today} disabled={d > today || d < start} onPick={() => onPick(d)} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Mes completo en una hoja, para saltar a cualquier día del historial. */
+function MonthSheet({ open, onOpenChange, today, start, selected, onPick }: { open: boolean; onOpenChange: (o: boolean) => void; today: string; start: string; selected: string; onPick: (d: string) => void }) {
+  const [month, setMonth] = React.useState(() => startOfMonth(parseISO(selected)));
+  React.useEffect(() => {
+    if (open) setMonth(startOfMonth(parseISO(selected)));
+  }, [open, selected]);
+  const from = toKey(month);
+  const to = toKey(endOfMonth(month));
+  const scores = useDays(from, to);
+  const byDate = new Map(scores.data?.map((d) => [d.date, d.score]));
+  const lead = (getDay(month) + 6) % 7; // huecos antes del día 1 (semana de lunes)
+  const days = Array.from({ length: Number(to.slice(8)) }, (_, i) => toKey(addDays(month, i)));
+  const canPrev = from > start;
+  const canNext = to < today;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={capitalize(format(month, 'MMMM yyyy', { locale: es }))}>
+      <div className="flex justify-between">
+        <GlassCircle aria-label="Mes anterior" disabled={!canPrev} onClick={() => setMonth((m) => subMonths(m, 1))} className="disabled:opacity-30">
+          <ChevronLeft />
+        </GlassCircle>
+        <GlassCircle aria-label="Mes siguiente" disabled={!canNext} onClick={() => setMonth((m) => addMonths(m, 1))} className="disabled:opacity-30">
+          <ChevronRight />
+        </GlassCircle>
+      </div>
+      <div className="grid grid-cols-7 gap-y-2 pb-2 text-center">
+        {WEEKDAYS.map((d, i) => (
+          <span key={i} className="text-[12px] font-medium text-ink-3">
+            {d}
+          </span>
+        ))}
+        {Array.from({ length: lead }, (_, i) => (
+          <span key={`x${i}`} />
+        ))}
+        {days.map((d) => (
+          <DayCell key={d} date={d} score={byDate.get(d)} selected={d === selected} isToday={d === today} disabled={d > today || d < start} onPick={() => onPick(d)} />
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+// --- Pasos del día ----------------------------------------------------------------
 
 /**
- * Rueda 3D vertical (como los selectores de iOS). El evento del centro se convierte en una
- * tarjeta de vidrio con su contenido en vivo; los de antes y después se encogen, se inclinan y
- * se apartan. Usa el scroll nativo con imán al centro (inercia del iPhone).
+ * Tarjetas que pasas de lado, una por momento del día, con puntos de página abajo. Al abrir
+ * muestra lo que toca ahora; en días pasados, empieza por el despertar.
  */
-function Wheel({ t, entries, meals, initial, clock }: { t: Today; entries: Entry[]; meals: Meal[]; initial: number; clock: number }) {
+function Pager({ t, entries, meals, initial, clock }: { t: Today; entries: Entry[]; meals: Meal[]; initial: number; clock: number | null }) {
   const log = useLog();
   const navigate = useNavigate();
   const ref = React.useRef<HTMLDivElement>(null);
-  const items = React.useRef<(HTMLLIElement | null)[]>([]);
-  const [focused, setFocused] = React.useState(initial);
-  const [pad, setPad] = React.useState(0);
-
-  const paint = React.useCallback(() => {
-    const box = ref.current;
-    if (!box) return;
-    const mid = box.scrollTop + box.clientHeight / 2;
-    let nearest = 0;
-    let nearestD = Infinity;
-    items.current.forEach((el, i) => {
-      if (!el) return;
-      const d = (el.offsetTop + ITEM / 2 - mid) / ITEM; // distancia en renglones
-      const a = Math.min(Math.abs(d), 4);
-      // Se apartan para dejar sitio a la tarjeta del centro y se acercan entre sí al alejarse.
-      const push = Math.sign(d) * ((CARD - ITEM) / 2) * Math.min(1, a);
-      const ty = push - Math.sign(d) * a * a * 7;
-      el.style.transform = `translateY(${ty}px) rotateX(${Math.max(-60, Math.min(60, -d * 17))}deg) scale(${1 - 0.15 * a})`;
-      // El del centro lo muestra la tarjeta.
-      el.style.opacity = String(Math.max(0, 1 - 0.27 * a) * Math.min(1, Math.max(0, (a - 0.35) / 0.45)));
-      if (Math.abs(d) < nearestD) {
-        nearestD = Math.abs(d);
-        nearest = i;
-      }
-    });
-    setFocused(nearest);
-  }, []);
-
-  // Margen arriba y abajo para que el primero y el último también puedan quedar al centro.
-  React.useLayoutEffect(() => {
-    const box = ref.current;
-    if (!box) return;
-    const measure = () => setPad(Math.max(0, (box.clientHeight - ITEM) / 2));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(box);
-    return () => ro.disconnect();
-  }, []);
-
-  // Al abrir, centra lo que toca ahora (sin animación).
-  React.useLayoutEffect(() => {
-    const box = ref.current;
-    if (!box || !pad) return;
-    box.scrollTop = initial * ITEM;
-    paint();
-  }, [initial, pad, paint]);
-
-  const raf = React.useRef(0);
-  const handleScroll = () => {
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(paint);
+  const [index, setIndex] = React.useState(initial);
+  const step = () => {
+    const first = ref.current?.firstElementChild as HTMLElement | null;
+    return first ? first.offsetWidth + 12 : 1;
   };
 
-  const center = entries[focused];
+  React.useLayoutEffect(() => {
+    const box = ref.current;
+    if (box) box.scrollLeft = initial * step();
+  }, [initial]);
+
+  const go = (i: number) => ref.current?.scrollTo({ left: i * step(), behavior: 'smooth' });
 
   return (
-    <div className="relative mt-3">
+    <div className="mt-6">
       <div
         ref={ref}
-        onScroll={handleScroll}
-        className="relative h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-300px)] min-h-[440px] snap-y snap-mandatory overflow-y-auto overscroll-contain [perspective:900px]"
-        style={{
-          WebkitMaskImage: 'linear-gradient(transparent, #000 14%, #000 86%, transparent)',
-          maskImage: 'linear-gradient(transparent, #000 14%, #000 86%, transparent)',
-        }}
+        onScroll={(ev) => setIndex(Math.round(ev.currentTarget.scrollLeft / step()))}
+        className="-mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-7"
       >
-        <ol style={{ paddingBlock: pad }}>
-          {entries.map((e, i) => (
-            <li
-              key={e.key}
-              ref={(el) => {
-                items.current[i] = el;
-              }}
-              className="flex snap-center items-center gap-4 px-5 will-change-transform [transform-style:preserve-3d]"
-              style={{ height: ITEM }}
-            >
-              <button
-                onClick={() => ref.current?.scrollTo({ top: i * ITEM, behavior: 'smooth' })}
-                className="flex min-w-0 flex-1 items-center gap-4 text-left"
-                tabIndex={i === focused ? -1 : 0}
-              >
-                <Dot state={e.state} />
-                <span className="min-w-0 flex-1">
-                  <span className={cn('block text-[13px] tabular', e.state === 'now' ? 'font-semibold text-tint' : 'text-ink-3')}>{e.time || 'durante el día'}</span>
-                  <span className={cn('block truncate text-[28px] font-bold leading-tight tracking-[-0.02em]', (e.state === 'missed' || e.state === 'rest') && 'text-ink-2')}>{e.title}</span>
-                  {e.detail && <span className={cn('block truncate text-[16px]', e.key === 'soda' ? 'text-star' : e.state === 'now' ? 'text-tint' : 'text-ink-2')}>{e.detail}</span>}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
+        {entries.map((e) => (
+          <section key={e.key} className="glass flex h-[300px] w-[calc(100%-1rem)] shrink-0 snap-center flex-col rounded-[32px] px-5 py-5" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
+            <div className="flex items-center gap-3">
+              <Dot state={e.state} />
+              <span className={cn('text-[15px] tabular', e.state === 'now' ? 'font-semibold text-tint' : 'text-ink-3')}>{e.time || 'durante el día'}</span>
+            </div>
+            <h2 className={cn('mt-1 truncate text-[32px] font-bold leading-tight tracking-[-0.025em]', (e.state === 'missed' || e.state === 'rest') && 'text-ink-2')}>{e.title}</h2>
+            <div className="mt-3 min-h-0 flex-1">
+              <LiveContent
+                entry={e}
+                t={t}
+                meals={meals}
+                clock={clock}
+                onOpen={() => (e.open === 'activity' ? navigate('/salud/actividad') : e.open ? log(e.open) : e.add && log(e.add))}
+              />
+            </div>
+          </section>
+        ))}
       </div>
 
-      {/* Tarjeta viva del centro: deja pasar el deslizamiento y sólo captura sus botones. */}
-      {center && (
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2" style={{ height: CARD }}>
-          <div key={center.key} className="glass flex h-full animate-[fade_200ms_ease-out] flex-col rounded-[32px] px-5 py-4" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
-            <div className="flex items-center gap-3">
-              <Dot state={center.state} />
-              <span className={cn('text-[13px] tabular', center.state === 'now' ? 'font-semibold text-tint' : 'text-ink-3')}>{center.time || 'durante el día'}</span>
-            </div>
-            <p className="mt-0.5 truncate text-[30px] font-bold leading-tight tracking-[-0.02em]">{center.title}</p>
-            <div className="pointer-events-auto mt-2 min-h-0 flex-1">
-              <LiveContent entry={center} t={t} meals={meals} clock={clock} onOpen={() => (center.open === 'activity' ? navigate('/salud/actividad') : center.open ? log(center.open) : center.add && log(center.add))} />
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="mt-4 flex justify-center gap-0.5" role="tablist" aria-label="Momentos del día">
+        {entries.map((e, i) => (
+          <button key={e.key} role="tab" aria-selected={i === index} aria-label={e.title} onClick={() => go(i)} className="grid h-6 w-4 place-items-center">
+            <span className={cn('block h-2 rounded-full transition-all duration-300', i === index ? 'w-2 bg-ink' : 'w-2 bg-white/25')} />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -348,9 +432,10 @@ function LiveRow({ bubble, children }: { bubble: React.ReactNode; children: Reac
   );
 }
 
-function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: Today; meals: Meal[]; clock: number; onOpen: () => void }) {
+function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: Today; meals: Meal[]; clock: number | null; onOpen: () => void }) {
   const log = useLog();
-  const addDrink = useAction((v: { type: 'WATER' | 'SODA_REGULAR'; ml: number }) => api.post('/beverages', { id: newId(), type: v.type, volumeMl: v.ml, loggedAt: new Date().toISOString() }), {
+  const date = clock === null ? t.date : undefined;
+  const addDrink = useAction((v: { type: 'WATER' | 'SODA_REGULAR'; ml: number }) => api.post('/beverages', { id: newId(), type: v.type, volumeMl: v.ml, loggedAt: atIso(date) }), {
     success: (_r, v) => (v.type === 'WATER' ? `+${v.ml} ml` : 'Refresco registrado'),
   });
   const h = t.hydration;
@@ -359,7 +444,7 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
     return (
       <LiveRow
         bubble={
-          <GlassBubble ariaLabel="Ver agua de hoy" onClick={() => log({ kind: 'water' })} label={`${fmtNum(h.waterMl / 1000)} L`} sub={h.waterGoalMl ? `de ${fmtNum(h.waterGoalMl / 1000)} L` : undefined}>
+          <GlassBubble ariaLabel="Ver agua de hoy" onClick={() => log({ kind: 'water', date })} label={`${fmtNum(h.waterMl / 1000)} L`} sub={h.waterGoalMl ? `de ${fmtNum(h.waterGoalMl / 1000)} L` : undefined}>
             <Liquid pct={h.waterGoalMl ? h.waterMl / h.waterGoalMl : 0} color="rgba(92,160,255,0.55)" />
           </GlassBubble>
         }
@@ -375,7 +460,7 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
     return (
       <LiveRow
         bubble={
-          <GlassBubble ariaLabel="Ver refresco de hoy" onClick={() => log({ kind: 'soda' })} label={max !== null ? `${fmtNum(h.sodaGlasses)}/${max}` : fmtNum(h.sodaGlasses)} sub="vasos">
+          <GlassBubble ariaLabel="Ver refresco de hoy" onClick={() => log({ kind: 'soda', date })} label={max !== null ? `${fmtNum(h.sodaGlasses)}/${max}` : fmtNum(h.sodaGlasses)} sub="vasos">
             <Liquid pct={max ? h.sodaGlasses / max : h.sodaGlasses ? 1 : 0} color="rgba(255,190,60,0.5)" fizz />
           </GlassBubble>
         }
@@ -383,12 +468,12 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
         <LiveButton primary tone="star" onClick={() => addDrink.mutate({ type: 'SODA_REGULAR', ml: h.glassSizeMl })}>
           +1 vaso
         </LiveButton>
-        <LiveButton onClick={() => log({ kind: 'soda' })}>Otra cantidad</LiveButton>
+        <LiveButton onClick={() => log({ kind: 'soda', date })}>Otra cantidad</LiveButton>
       </LiveRow>
     );
   }
 
-  if (e.key === 'activity') return <ActivityLive entry={e} onOpen={onOpen} />;
+  if (e.key === 'activity') return <ActivityLive entry={e} t={t} onOpen={onOpen} />;
 
   if (e.key === 'wake') {
     const done = e.state === 'done' && t.sleep;
@@ -408,6 +493,19 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
   if (e.key === 'bed') {
     const start = t.schedule.dayStart;
     const since = (m: number) => (((m - start) % 1440) + 1440) % 1440;
+    if (clock === null) {
+      return (
+        <LiveRow
+          bubble={
+            <GlassBubble ariaLabel="Hora de dormir" label={t.schedule.bed} sub="meta">
+              <NightFill />
+            </GlassBubble>
+          }
+        >
+          {null}
+        </LiveRow>
+      );
+    }
     const left = since(parseClock(t.schedule.bed)) - since(clock);
     const pct = left > 0 ? Math.min(1, left / 180) : 0; // las últimas 3 horas
     return (
@@ -451,10 +549,11 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
   );
 }
 
-function ActivityLive({ entry: e, onOpen }: { entry: Entry; onOpen: () => void }) {
+function ActivityLive({ entry: e, t, onOpen }: { entry: Entry; t: Today; onOpen: () => void }) {
+  const log = useLog();
   const plan = useActivityPlan();
   const p = plan.data;
-  const routine = p?.templates.find((x) => x.code === p.today.routine);
+  const routine = p?.templates.find((x) => x.code === t.activity.routine);
   if (e.state === 'rest') {
     return (
       <LiveRow
@@ -473,7 +572,7 @@ function ActivityLive({ entry: e, onOpen }: { entry: Entry; onOpen: () => void }
   return (
     <LiveRow
       bubble={
-        <GlassBubble ariaLabel="Ver rutina" onClick={() => onOpen()} label={p?.today.routine ?? 'C'} sub={routine ? `${routine.exercises.length} ejercicios` : e.detail}>
+        <GlassBubble ariaLabel="Ver rutina" onClick={() => onOpen()} label={t.activity.routine ?? 'C'} sub={routine ? `${routine.exercises.length} ejercicios` : e.detail}>
           <RingFill pct={done ? 1 : 0.06} color="rgba(48,209,88,0.85)" />
         </GlassBubble>
       }
@@ -487,7 +586,7 @@ function ActivityLive({ entry: e, onOpen }: { entry: Entry; onOpen: () => void }
           ))}
         </ul>
       )}
-      {done ? <span className="text-[16px] font-semibold text-green">Hecho</span> : <LiveButton primary onClick={onOpen}>Ya lo hice</LiveButton>}
+      {done ? <span className="text-[16px] font-semibold text-green">Hecho</span> : <LiveButton primary onClick={() => (e.add ? log(e.add) : onOpen())}>Ya lo hice</LiveButton>}
     </LiveRow>
   );
 }
