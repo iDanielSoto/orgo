@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { BackButton } from '@/pages/activity';
+import { BackButton } from '@/components/ui/ios';
 import { Capsule, Item, LargeTitle, List } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { fmtDate } from '@/lib/format';

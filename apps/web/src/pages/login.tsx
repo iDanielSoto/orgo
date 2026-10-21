@@ -1,7 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
-import { Backdrop } from '@/components/layout/app-shell';
 import { Capsule, List, TextItem } from '@/components/ui/ios';
 import { HeatWord } from '@/components/portfolio';
 import { api, ApiError } from '@/lib/api';
@@ -36,7 +35,6 @@ export function LoginPage() {
 
   return (
     <form onSubmit={submit} className="mx-auto flex min-h-dvh max-w-[420px] flex-col justify-center px-5">
-      <Backdrop />
       <HeatWord text="Hola" className="mb-10 text-[64px] font-bold leading-none tracking-[-0.04em]" />
       <List>
         <TextItem type="email" autoComplete="email" placeholder="Correo" value={email} onChange={(e) => setEmail(e.target.value)} />

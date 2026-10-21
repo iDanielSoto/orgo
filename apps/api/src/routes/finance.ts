@@ -166,7 +166,9 @@ financeRouter.get('/finance/summary', async (req, res) => {
   res.json({
     ...summary,
     today: ctx.today,
-    recent: txs.filter((t) => dateKey(t.localDate) >= from).slice(0, 8).map(serializeTx),
+    // Para "puedes gastar hoy": lo gastado hoy se descuenta aparte del presupuesto diario.
+    spentTodayCents: txs.filter((t) => t.kind === 'EXPENSE' && dateKey(t.localDate) === ctx.today).reduce((a, t) => a + t.amountCents, 0),
+    recent: txs.filter((t) => dateKey(t.localDate) >= from).slice(0, 20).map(serializeTx),
     upcoming,
     projection,
     rule,

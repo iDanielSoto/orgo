@@ -1,64 +1,92 @@
-import { ChevronLeft } from 'lucide-react';
 import * as React from 'react';
-import { useNavigate } from 'react-router';
 import { useLog } from '@/components/forms/log';
-import { Capsule, GlassCircle, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
-import { cn, fmtDate } from '@/lib/format';
-import { useActivityPlan } from '@/lib/queries';
+import { Capsule, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
+import { Hero } from '@/components/zone';
+import { capitalize, cn, fmtDate } from '@/lib/format';
+import { useActivity, useActivityPlan } from '@/lib/queries';
 import type { ActivityPlan } from '@/lib/types';
 
 type Exercise = ActivityPlan['templates'][number]['exercises'][number];
 
-export function BackButton() {
-  const navigate = useNavigate();
-  return (
-    <GlassCircle aria-label="Atrás" onClick={() => navigate(-1)} className="mb-2">
-      <ChevronLeft className="-ml-0.5" />
-    </GlassCircle>
-  );
-}
+const trains = (k: string) => k === 'STRENGTH' || k === 'WALK_MOBILITY';
 
-export function ActivityPage() {
+/** Zona Ejercicio: la semana, la rutina de hoy y tus últimas sesiones. */
+export function ExercisePage() {
   const plan = useActivityPlan();
+  const history = useActivity(30);
   const log = useLog();
   const [ex, setEx] = React.useState<Exercise | null>(null);
   const p = plan.data;
-  if (!p) return <BackButton />;
+  if (!p) return <LargeTitle text="Ejercicio" />;
   const routine = p.templates.find((t) => t.code === p.today.routine);
   const reps = (e: Exercise) => `${Math.min(e.sets, p.level.setsMax)} × ${e.repsMin === e.repsMax ? e.repsMin : `${e.repsMin}–${e.repsMax}`}`;
+  const planned = p.week.filter((d) => trains(d.kind));
+  const done = p.week.filter((d) => d.done).length;
+  const doneToday = p.week.find((d) => d.date === p.date)?.done ?? false;
 
   return (
     <div>
-      <BackButton />
-      <LargeTitle text={p.today.label} />
+      <LargeTitle text="Ejercicio" />
 
-      <ol className="mb-10 flex justify-between">
+      <Hero value={done} unit={`de ${planned.length}`} sub="sesiones esta semana" tone={planned.length > 0 && done >= planned.length ? 'green' : undefined} />
+
+      <ol className="mt-8 grid grid-cols-7">
         {p.week.map((d) => (
           <li key={d.date} className="flex flex-col items-center gap-2">
-            <span className="text-[13px] text-ink-3">{fmtDate(d.date, 'EEEEE').toUpperCase()}</span>
-            <span className={cn('glass grid size-10 place-items-center rounded-full text-[15px] font-semibold', d.done && 'text-green', d.date === p.date && 'text-tint')}>
+            <span className={cn('text-[12px] font-medium', d.date === p.date ? 'text-tint' : 'text-ink-3')}>{fmtDate(d.date, 'EEEEE').toUpperCase()}</span>
+            <span
+              className={cn(
+                'grid size-10 place-items-center rounded-full text-[15px] font-semibold',
+                d.done ? 'bg-green text-[#04210d]' : trains(d.kind) ? 'glass' : 'text-ink-3',
+                d.date === p.date && !d.done && 'ring-2 ring-tint',
+              )}
+            >
               {d.done ? '✓' : (d.routine ?? (d.kind === 'WALK_MOBILITY' ? 'C' : '·'))}
             </span>
           </li>
         ))}
       </ol>
 
-      {routine && (
-        <List>
-          {routine.exercises.map((e) => (
-            <Item key={e.name} label={e.name} detail={reps(e)} onClick={() => setEx(e)} />
-          ))}
-        </List>
-      )}
-      {p.today.kind === 'WALK_MOBILITY' && (
-        <List>
-          <Item label="Caminata" detail={`${p.level.walkMinutesMin}–${p.level.walkMinutesMax} min`} />
-        </List>
+      <h2 className="mt-12 text-[22px] font-bold tracking-[-0.02em]">{p.today.label}</h2>
+      <div className="mt-3">
+        {routine && (
+          <List>
+            {routine.exercises.map((e) => (
+              <Item key={e.name} label={e.name} detail={reps(e)} onClick={() => setEx(e)} />
+            ))}
+          </List>
+        )}
+        {p.today.kind === 'WALK_MOBILITY' && (
+          <List>
+            <Item label="Caminata" detail={`${p.level.walkMinutesMin}–${p.level.walkMinutesMax} min`} />
+          </List>
+        )}
+        {!trains(p.today.kind) && <p className="text-[17px] text-ink-2">Recuperarse también cuenta.</p>}
+      </div>
+
+      {trains(p.today.kind) && (
+        <div className="mt-6 flex justify-center">
+          {doneToday ? (
+            <p className="text-[17px] font-semibold text-green">Hecho hoy</p>
+          ) : (
+            <Capsule className="bg-tint text-[#06102a]" onClick={() => log({ kind: 'activity', routine: p.today.routine ?? 'WALK' })}>
+              Ya lo hice
+            </Capsule>
+          )}
+        </div>
       )}
 
-      {(p.today.kind === 'STRENGTH' || p.today.kind === 'WALK_MOBILITY') && (
-        <div className="mt-10 flex justify-center">
-          <Capsule onClick={() => log({ kind: 'activity', routine: p.today.routine ?? 'WALK' })}>Ya lo hice</Capsule>
+      {history.data && history.data.length > 0 && (
+        <div className="mt-12">
+          <List header="Últimas sesiones">
+            {history.data.slice(0, 10).map((s) => (
+              <Item
+                key={s.id}
+                label={s.kind === 'WALK' ? 'Caminata' : `Fuerza ${s.routineCode ?? ''}`.trim()}
+                detail={`${capitalize(fmtDate(s.date, 'EEE d'))}${s.durationMinutes ? ` · ${s.durationMinutes} min` : ''}`}
+              />
+            ))}
+          </List>
         </div>
       )}
 

@@ -4,7 +4,7 @@ export function DayRing({ score, size = 44, track = true }: { score: number | un
   const c = 2 * Math.PI * r;
   return (
     <svg viewBox="0 0 44 44" width={size} height={size} className="-rotate-90" aria-hidden>
-      {track && <circle cx="22" cy="22" r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />}
+      {track && <circle cx="22" cy="22" r={r} fill="none" stroke="var(--sep)" strokeWidth="3" />}
       {score !== undefined && score > 0 && (
         <circle cx="22" cy="22" r={r} fill="none" stroke="var(--tint)" strokeWidth="3" strokeLinecap="round" strokeDasharray={`${c * score} ${c}`} className="transition-[stroke-dasharray] duration-500" />
       )}

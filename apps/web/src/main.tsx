@@ -9,8 +9,9 @@ import { LogProvider } from '@/components/forms/log';
 import { AppShell } from '@/components/layout/app-shell';
 import { ApiError } from '@/lib/api';
 import { keys, useMe } from '@/lib/queries';
-import { ActivityPage } from '@/pages/activity';
+import { ExercisePage } from '@/pages/activity';
 import { BodyPage } from '@/pages/body';
+import { FoodPage } from '@/pages/food';
 import { AccountsPage } from '@/pages/finance/accounts';
 import { BudgetRulePage } from '@/pages/finance/budget';
 import { FinanceHomePage } from '@/pages/finance/home';
@@ -22,6 +23,7 @@ import { LoginPage } from '@/pages/login';
 import { ProfilePage } from '@/pages/profile';
 import { ProfileSetupPage } from '@/pages/profile-setup';
 import { SettingsPage } from '@/pages/settings';
+import { SleepPage } from '@/pages/sleep';
 import { TodayPage } from '@/pages/today';
 
 const queryClient: QueryClient = new QueryClient({
@@ -68,7 +70,10 @@ function App() {
               <Route path="salud" element={<TodayPage />} />
               <Route path="salud/cuerpo" element={<BodyPage />} />
               <Route path="salud/habitos" element={<HabitsPage />} />
-              <Route path="salud/actividad" element={<ActivityPage />} />
+              <Route path="salud/ejercicio" element={<ExercisePage />} />
+              <Route path="salud/comida" element={<FoodPage />} />
+              <Route path="salud/sueno" element={<SleepPage />} />
+              <Route path="salud/actividad" element={<Navigate to="/salud/ejercicio" replace />} />
               <Route path="finanzas" element={<FinanceHomePage />} />
               <Route path="finanzas/movimientos" element={<MovementsPage />} />
               <Route path="finanzas/cuentas" element={<AccountsPage />} />
@@ -79,7 +84,7 @@ function App() {
               {/* Rutas anteriores (avisos ya enviados) */}
               <Route path="cuerpo" element={<Navigate to="/salud/cuerpo" replace />} />
               <Route path="habitos" element={<Navigate to="/salud/habitos" replace />} />
-              <Route path="actividad" element={<Navigate to="/salud/actividad" replace />} />
+              <Route path="actividad" element={<Navigate to="/salud/ejercicio" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Route>

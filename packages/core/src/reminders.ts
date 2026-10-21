@@ -55,7 +55,7 @@ export function dueReminders(i: ReminderInput): Reminder[] {
   const awakeTotal = norm(i.bedMinutes - i.wakeMinutes) || 1440;
 
   if (i.enabled.TRAINING && (i.plannedKind === 'STRENGTH' || i.plannedKind === 'WALK_MOBILITY') && !i.activityDone && inWindow(i.nowMinutes, i.trainingMinutes)) {
-    out.push({ kind: 'TRAINING', slot: 'main', title: `Hoy toca ${i.plannedLabel}`, body: 'Unos 30 minutos. Cuando termines, regístralo.', url: '/salud/actividad' });
+    out.push({ kind: 'TRAINING', slot: 'main', title: `Hoy toca ${i.plannedLabel}`, body: 'Unos 30 minutos. Cuando termines, regístralo.', url: '/salud/ejercicio' });
   }
 
   if (i.enabled.HYDRATION && i.waterGoalMl) {

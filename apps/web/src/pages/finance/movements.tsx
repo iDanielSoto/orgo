@@ -2,6 +2,7 @@ import { BUCKET_LABEL, formatMXN } from '@forma/core';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import * as React from 'react';
 import { useSearchParams } from 'react-router';
+import { CategoryBadge } from '@/components/category-icon';
 import { useFin } from '@/components/forms/finance-log';
 import { Item, LargeTitle, List, Segmented } from '@/components/ui/ios';
 import { capitalize, fmtDate } from '@/lib/format';
@@ -79,7 +80,9 @@ export function MovementsPage() {
               <Item
                 key={t.id}
                 label={
-                  <span>
+                  <span className="flex items-center gap-3">
+                    <CategoryBadge name={t.category} kind={t.kind} size={36} />
+                    <span className="min-w-0">
                     {t.concept}
                     <span className="block text-[13px] text-ink-3">
                       {t.kind === 'EXPENSE'
@@ -89,6 +92,7 @@ export function MovementsPage() {
                           : t.kind === 'TRANSFER'
                             ? 'Transferencia'
                             : 'Ajuste'}
+                    </span>
                     </span>
                   </span>
                 }

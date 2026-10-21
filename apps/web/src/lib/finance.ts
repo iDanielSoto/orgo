@@ -84,6 +84,7 @@ export interface FinSummary {
   expectedCents: number;
   expectedUnknown: number;
   spentCents: number;
+  spentTodayCents: number;
   buckets: Record<Bucket, BucketState>;
   savingsSeparatedCents: number;
   availableRealCents: number;

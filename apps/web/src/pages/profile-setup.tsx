@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router';
-import { Backdrop } from '@/components/layout/app-shell';
 import { Capsule, LargeTitle, List, Segmented, TextItem } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { useAction } from '@/lib/queries';
@@ -55,7 +54,6 @@ export function ProfileSetupPage() {
   );
   return (
     <div className="mx-auto max-w-[520px] space-y-6 px-5 py-10">
-      <Backdrop />
       <LargeTitle text="Tu perfil" />
       <List>
         <TextItem placeholder="Nombre" value={name} onChange={(e) => setName(e.target.value)} />

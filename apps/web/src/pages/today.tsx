@@ -1,7 +1,7 @@
 import { parseClock, type MealType } from '@forma/core';
 import { addDays, addMonths, addWeeks, endOfMonth, format, getDay, parseISO, startOfMonth, startOfWeek, subDays, subMonths, subWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { Avatar } from '@/components/avatar';
@@ -147,6 +147,10 @@ function buildDay(t: Today, meals: Meal[], clock: number | null): Entry[] {
   const bed = since(parseClock(t.schedule.bed));
   out.push({ key: 'bed', at: bed, time: t.schedule.bed, title: 'Dormir', detail: bed - now <= 60 && bed > now ? 'Prepárate' : undefined, state: over ? 'rest' : 'next' });
 
+  // Hábitos: cierran el día.
+  const pending = t.habits.filter((x) => x.status !== 'met' && x.status !== 'na').length;
+  out.push({ key: 'habits', at: 1441, time: '', title: 'Hábitos', state: t.habits.length && !pending ? 'done' : over ? 'missed' : 'next' });
+
   return out.sort((x, y) => x.at - y.at);
 }
 
@@ -192,9 +196,16 @@ export function TodayPage() {
       <LargeTitle
         text={!t || !past ? 'Hoy' : sel === (todayKey && toKey(subDays(parseISO(todayKey), 1))) ? 'Ayer' : capitalize(fmtDate(sel, 'EEEE d'))}
         trailing={
-          <button aria-label="Inicio" onClick={() => navigate('/')} className="press">
-            <Avatar version={profile.data?.profile?.avatarVersion} size={44} />
-          </button>
+          <div className="flex items-center gap-2.5">
+            {today.data && (
+              <button onClick={() => navigate('/salud/cuerpo')} aria-label="Cuerpo" className="glass press h-11 rounded-full px-4 text-[16px] font-semibold tabular">
+                {today.data.weight.latestKg !== null ? `${fmtNum(today.data.weight.latestKg)} kg` : 'Peso'}
+              </button>
+            )}
+            <button aria-label="Inicio" onClick={() => navigate('/')} className="press">
+              <Avatar version={profile.data?.profile?.avatarVersion} size={44} />
+            </button>
+          </div>
         }
       />
       {t && (
@@ -253,7 +264,7 @@ function DayCell({ date, score, selected, isToday, disabled, onPick }: { date: s
       <span
         className={cn(
           'relative grid size-[30px] place-items-center rounded-full text-[15px] font-semibold tabular',
-          selected ? 'bg-ink text-[#000]' : isToday ? 'text-tint' : 'text-ink',
+          selected ? 'bg-ink text-[var(--bg)]' : isToday ? 'text-tint' : 'text-ink',
         )}
       >
         {Number(date.slice(8))}
@@ -377,7 +388,7 @@ function Pager({ t, entries, meals, initial, clock }: { t: Today; entries: Entry
         className="-mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-7"
       >
         {entries.map((e) => (
-          <section key={e.key} className="glass flex h-[300px] w-[calc(100%-1rem)] shrink-0 snap-center flex-col rounded-[32px] px-5 py-5" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
+          <section key={e.key} className="glass flex h-[300px] w-[calc(100%-1rem)] shrink-0 snap-center flex-col rounded-[32px] px-5 py-5">
             <div className="flex items-center gap-3">
               <Dot state={e.state} />
               <span className={cn('text-[15px] tabular', e.state === 'now' ? 'font-semibold text-tint' : 'text-ink-3')}>{e.time || 'durante el día'}</span>
@@ -389,7 +400,7 @@ function Pager({ t, entries, meals, initial, clock }: { t: Today; entries: Entry
                 t={t}
                 meals={meals}
                 clock={clock}
-                onOpen={() => (e.open === 'activity' ? navigate('/salud/actividad') : e.open ? log(e.open) : e.add && log(e.add))}
+                onOpen={() => (e.open === 'activity' ? navigate('/salud/ejercicio') : e.open ? log(e.open) : e.add && log(e.add))}
               />
             </div>
           </section>
@@ -474,6 +485,7 @@ function LiveContent({ entry: e, t, meals, clock, onOpen }: { entry: Entry; t: T
   }
 
   if (e.key === 'activity') return <ActivityLive entry={e} t={t} onOpen={onOpen} />;
+  if (e.key === 'habits') return <HabitsLive t={t} />;
 
   if (e.key === 'wake') {
     const done = e.state === 'done' && t.sleep;
@@ -588,6 +600,52 @@ function ActivityLive({ entry: e, t, onOpen }: { entry: Entry; t: Today; onOpen:
       )}
       {done ? <span className="text-[16px] font-semibold text-green">Hecho</span> : <LiveButton primary onClick={() => (e.add ? log(e.add) : onOpen())}>Ya lo hice</LiveButton>}
     </LiveRow>
+  );
+}
+
+/** Hábitos del día con su círculo, como en Recordatorios; los automáticos se marcan solos. */
+function HabitsLive({ t }: { t: Today }) {
+  const navigate = useNavigate();
+  const toggle = useAction((h: Today['habits'][number]) =>
+    h.manual ? api.del(`/habits/${h.id}/complete?date=${t.date}`) : api.post(`/habits/${h.id}/complete`, { date: t.date }),
+  );
+  if (!t.habits.length) {
+    return (
+      <div className="flex h-full items-center">
+        <LiveButton primary onClick={() => navigate('/salud/habitos')}>
+          Crear un hábito
+        </LiveButton>
+      </div>
+    );
+  }
+  const shown = t.habits.slice(0, 4);
+  return (
+    <div className="flex h-full flex-col">
+      <ul className="min-h-0 flex-1 space-y-1">
+        {shown.map((h) => {
+          const met = h.status === 'met';
+          const auto = met && !h.manual;
+          return (
+            <li key={h.id}>
+              <button
+                onClick={() => toggle.mutate(h)}
+                disabled={auto || h.status === 'na' || toggle.isPending}
+                aria-pressed={met}
+                className={cn('flex min-h-10 w-full items-center gap-3 text-left', h.status === 'na' && 'opacity-40')}
+              >
+                <span className={cn('grid size-[26px] shrink-0 place-items-center rounded-full border-2', met ? 'border-tint bg-tint text-[#06102a]' : 'border-ink-3')}>
+                  {met && <Check className="size-4" strokeWidth={3.2} />}
+                </span>
+                <span className={cn('truncate text-[17px]', met && 'text-ink-2')}>{h.name}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <button onClick={() => navigate('/salud/habitos')} className="press self-start text-[15px] font-semibold text-tint">
+        {t.habits.length > shown.length ? `${t.habits.length - shown.length} más` : 'Editar'}
+      </button>
+    </div>
   );
 }
 

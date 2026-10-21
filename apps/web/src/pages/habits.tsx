@@ -1,6 +1,6 @@
 import { Check, Plus } from 'lucide-react';
 import * as React from 'react';
-import { GlassCircle, Item, LargeTitle, List, Segmented, Sheet, TextItem } from '@/components/ui/ios';
+import { BackButton, GlassCircle, Item, LargeTitle, List, Segmented, Sheet, TextItem } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/format';
 import { useAction, useHabits } from '@/lib/queries';
@@ -11,6 +11,7 @@ export function HabitsPage() {
   const [editing, setEditing] = React.useState<Habit | 'new' | null>(null);
   return (
     <div>
+      <BackButton fallback="/salud" />
       <LargeTitle
         text="Hábitos"
         trailing={

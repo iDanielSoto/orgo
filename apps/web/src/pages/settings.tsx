@@ -2,13 +2,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { BigNumber, Item, LargeTitle, List, Sheet, TextItem, TimeItem } from '@/components/ui/ios';
+import { BackButton, BigNumber, Item, LargeTitle, List, Sheet, TextItem, TimeItem } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { fmtKg, fmtLiters, fmtNum } from '@/lib/format';
 import { useAction, useHydrationGoals, useProfile } from '@/lib/queries';
 import type { HydrationGoal } from '@/lib/types';
 import { NotificationsSection } from '@/components/notifications';
-import { BackButton } from './activity';
 
 type Edit =
   | { kind: 'number'; title: string; path: '/profile' | '/settings'; field: string; value: number; unit: string; decimal?: boolean }

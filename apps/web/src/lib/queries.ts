@@ -34,6 +34,7 @@ export const keys = {
   habitStats: (days: number) => ['habits', 'stats', days] as const,
   archivedHabits: ['habits', 'archived'] as const,
   meals: (date?: string) => ['meals', date ?? 'today'] as const,
+  mealsDays: (days: number) => ['meals', 'days', days] as const,
   sleep: (days: number) => ['sleep', days] as const,
   activityPlan: ['activity', 'plan'] as const,
   activity: (days: number) => ['activity', 'list', days] as const,
@@ -83,6 +84,8 @@ export const useArchivedHabits = () =>
   useQuery({ queryKey: keys.archivedHabits, queryFn: () => api.get<Omit<Habit, 'today' | 'week'>[]>('/habits/archived') });
 export const useMeals = (date?: string) =>
   useQuery({ queryKey: keys.meals(date), queryFn: () => api.get<Meal[]>(`/meals${date ? `?date=${date}` : ''}`) });
+export const useMealsDays = (days: number) =>
+  useQuery({ queryKey: keys.mealsDays(days), queryFn: () => api.get<Meal[]>(`/meals?days=${days}`) });
 export const useSleep = (days: number) =>
   useQuery({ queryKey: keys.sleep(days), queryFn: () => api.get<SleepEntry[]>(`/sleep?days=${days}`) });
 export const useActivityPlan = () =>

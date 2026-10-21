@@ -1,17 +1,30 @@
 <!doctype html>
-<html lang="es-MX" class="dark">
+<html lang="es-MX">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content="Ordo — Tu vida, en orden." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="Ordo" />
     <title>Ordo</title>
+    <!-- Claro u oscuro según el sistema, antes de pintar (sin parpadeo) y al cambiarlo en vivo. -->
+    <script>
+      (function () {
+        var mq = matchMedia('(prefers-color-scheme: light)');
+        var apply = function () {
+          document.documentElement.dataset.theme = mq.matches ? 'light' : 'dark';
+        };
+        apply();
+        mq.addEventListener('change', apply);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

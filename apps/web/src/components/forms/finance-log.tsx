@@ -2,7 +2,8 @@ import { allocate, BUCKET_LABEL, formatMXN, toCents, type Bucket, type Split } f
 import { useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
 import { toast } from 'sonner';
-import { BigNumber, Item, List, Segmented, Sheet, Switch, TextItem } from '@/components/ui/ios';
+import { categoryIcon } from '@/components/category-icon';
+import { BigNumber, Item, Keypad, List, Segmented, Sheet, Switch, TextItem } from '@/components/ui/ios';
 import { api, newId } from '@/lib/api';
 import {
   ACCOUNT_LABEL,
@@ -12,7 +13,6 @@ import {
   useAccounts,
   useCategories,
   useFinSummary,
-  useSuggestions,
   type AccountType,
   type FinAccount,
   type FinIncome,
@@ -20,7 +20,7 @@ import {
   type FinTx,
   type IncomeType,
 } from '@/lib/finance';
-import { cn } from '@/lib/format';
+import { cn, fmtDate } from '@/lib/format';
 import { useAction } from '@/lib/queries';
 
 export type FinRequest =
@@ -132,7 +132,6 @@ const rememberAccount = (id: string | null) => {
 function ExpenseSheet({ open, onOpenChange, onClose, edit }: SheetProps & { edit?: FinTx }) {
   const accounts = useAccounts();
   const cats = useCategories();
-  const sugg = useSuggestions();
   const qc = useQueryClient();
   const invalidate = useInvalidateFinance();
   const active = (accounts.data ?? []).filter((a) => !a.archived);
@@ -143,72 +142,118 @@ function ExpenseSheet({ open, onOpenChange, onClose, edit }: SheetProps & { edit
   const [categoryId, setCategoryId] = React.useState<string | null>(edit?.categoryId ?? null);
   const [accountId, setAccountId] = React.useState<string | null>(edit?.accountId ?? lastAccount());
   const [date, setDate] = React.useState(edit?.date ?? todayKey());
+  const [more, setMore] = React.useState(false);
   const cents = parseAmount(amount);
   const accountValid = !accountId || active.some((a) => a.id === accountId);
+  const account = active.find((a) => a.id === accountId);
 
   const save = useAction(
-    async () => {
-      const body = { amountCents: cents!, concept: concept.trim(), bucket, categoryId, accountId: accountValid ? accountId : null, date };
+    async (v: { categoryId: string | null; bucket: Bucket }) => {
+      const cat = cats.data?.find((c) => c.id === v.categoryId);
+      const body = { amountCents: cents!, concept: concept.trim() || cat?.name || 'Gasto', bucket: v.bucket, categoryId: v.categoryId, accountId: accountValid ? accountId : null, date };
+      const id = edit?.id ?? newId();
       if (edit) await api.patch(`/finance/transactions/${edit.id}`, body);
-      else await api.post('/finance/transactions', { id: newId(), kind: 'EXPENSE', ...body });
+      else await api.post('/finance/transactions', { id, kind: 'EXPENSE', ...body });
       rememberAccount(body.accountId);
+      return id;
     },
     {
       invalidate: [],
-      onSuccess: async () => {
+      onSuccess: async (id, v) => {
         await invalidate();
-        // Confirmación con lo que queda en ese presupuesto.
-        const s = await qc.fetchQuery({ queryKey: fk.summary(undefined), queryFn: () => api.get<FinSummary>('/finance/summary') });
-        const b = s.buckets[bucket];
-        toast.success(b.remaining >= 0 ? `${BUCKET_LABEL[bucket]}: quedan ${formatMXN(b.remaining)}` : `${BUCKET_LABEL[bucket]}: excedido por ${formatMXN(-b.remaining)}`);
         onClose();
+        // Confirmación con lo que queda hoy, y deshacer por si tocaste otra categoría.
+        const s = await qc.fetchQuery({ queryKey: fk.summary(undefined), queryFn: () => api.get<FinSummary>('/finance/summary') });
+        const b = s.buckets[v.bucket];
+        const msg = b.remaining >= 0 ? `${BUCKET_LABEL[v.bucket]}: quedan ${formatMXN(b.remaining)}` : `${BUCKET_LABEL[v.bucket]}: te pasaste ${formatMXN(-b.remaining)}`;
+        toast.success(edit ? 'Gasto guardado' : `${formatMXN(cents!)} · ${msg}`, {
+          duration: edit ? undefined : 6000,
+          action: edit
+            ? undefined
+            : {
+                label: 'Deshacer',
+                onClick: () => void api.del(`/finance/transactions/${id}`).then(invalidate),
+              },
+        });
       },
     },
   );
   const del = useAction(() => api.del(`/finance/transactions/${edit!.id}`), { success: 'Gasto eliminado', invalidate: [fk.all], onSuccess: onClose });
 
+  /** Tocar una categoría la elige; con monto escrito (y gasto nuevo) además guarda. */
   const pickCategory = (id: string) => {
-    setCategoryId(id);
     const c = cats.data?.find((x) => x.id === id);
-    if (c && !bucketTouched && c.defaultBucket !== 'NONE') setBucket(c.defaultBucket);
+    const b = c && !bucketTouched && c.defaultBucket !== 'NONE' ? c.defaultBucket : bucket;
+    setCategoryId(id);
+    setBucket(b);
+    if (!edit && cents && !save.isPending) save.mutate({ categoryId: id, bucket: b });
   };
 
+  const when = date === todayKey() ? 'Hoy' : date;
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={edit ? 'Gasto' : 'Nuevo gasto'} onDone={() => save.mutate(undefined)} doneDisabled={!cents || !concept.trim() || save.isPending}>
-      <BigNumber value={amount} onChange={setAmount} unit="MXN" decimal />
-      <List>
-        <TextItem placeholder="Concepto" value={concept} maxLength={120} onChange={(e) => setConcept(e.target.value)} autoFocus={false} />
-      </List>
-      {!edit && (sugg.data?.length ?? 0) > 0 && (
-        <Chips
-          value={null}
-          onChange={(c) => {
-            const s = sugg.data!.find((x) => x.concept === c)!;
-            setConcept(s.concept);
-            if (s.categoryId) setCategoryId(s.categoryId);
-            if (s.bucket !== 'NONE') {
-              setBucket(s.bucket);
-              setBucketTouched(true);
-            }
-            if (!amount && s.lastAmountCents) setAmount(centsToInput(s.lastAmountCents));
-          }}
-          options={sugg.data!.map((s) => ({ value: s.concept, label: s.concept }))}
-        />
-      )}
-      <Segmented
-        value={bucket}
-        onChange={(b) => {
-          setBucket(b);
-          setBucketTouched(true);
-        }}
-        options={BUCKET_OPTIONS}
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={edit ? 'Gasto' : 'Nuevo gasto'}
+      onDone={() => save.mutate({ categoryId, bucket })}
+      doneDisabled={!cents || save.isPending}
+    >
+      <BigNumber value={amount} onChange={setAmount} prefix="$" decimal keypad={false} />
+      <input
+        value={concept}
+        onChange={(e) => setConcept(e.target.value)}
+        maxLength={120}
+        placeholder="Concepto (opcional)"
+        className="-mt-3 w-full bg-transparent text-center text-[17px] text-ink placeholder:text-ink-3 focus:outline-none"
       />
-      {cats.data && <Chips value={categoryId} onChange={pickCategory} options={cats.data.map((c) => ({ value: c.id, label: c.name }))} />}
-      {active.length > 0 && <Chips value={accountValid ? accountId : null} onChange={setAccountId} options={active.map((a) => ({ value: a.id, label: a.name }))} />}
+
+      {cats.data && (
+        <div className="grid grid-cols-4 gap-x-2 gap-y-3" role="radiogroup" aria-label="Categoría">
+          {cats.data.map((c) => {
+            const on = c.id === categoryId;
+            const Icon = categoryIcon(c.name);
+            return (
+              <button key={c.id} type="button" role="radio" aria-checked={on} onClick={() => pickCategory(c.id)} className="press flex min-w-0 flex-col items-center gap-1.5">
+                <span className={cn('grid size-12 place-items-center rounded-full transition-colors', on ? 'bg-tint text-[#06102a]' : 'bg-fill text-ink')}>
+                  <Icon className="size-6" strokeWidth={1.9} />
+                </span>
+                <span className={cn('w-full truncate text-center text-[12px]', on ? 'font-semibold text-ink' : 'text-ink-2')}>{c.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <Keypad value={amount} onChange={setAmount} />
+
       <List>
-        <DateRow label="Fecha" value={date} onChange={setDate} />
-        {edit && <Item label="Eliminar" destructive onClick={() => confirm('¿Eliminar este gasto?') && del.mutate(undefined)} />}
+        <Item
+          label={<span className="text-ink-2">{[when, account?.name, BUCKET_LABEL[bucket]].filter(Boolean).join(' · ')}</span>}
+          detail={more ? 'Ocultar' : 'Cambiar'}
+          onClick={() => setMore((m) => !m)}
+        />
       </List>
+      {more && (
+        <>
+          <Segmented
+            value={bucket}
+            onChange={(b) => {
+              setBucket(b);
+              setBucketTouched(true);
+            }}
+            options={BUCKET_OPTIONS}
+          />
+          {active.length > 0 && <Chips value={accountValid ? accountId : null} onChange={setAccountId} options={active.map((a) => ({ value: a.id, label: a.name }))} />}
+          <List>
+            <DateRow label="Fecha" value={date} onChange={setDate} />
+          </List>
+        </>
+      )}
+      {edit && (
+        <List>
+          <Item label="Eliminar" destructive onClick={() => confirm('¿Eliminar este gasto?') && del.mutate(undefined)} />
+        </List>
+      )}
     </Sheet>
   );
 }
@@ -226,6 +271,7 @@ function IncomeSheet({ open, onOpenChange, onClose, edit, receive }: SheetProps 
   const [date, setDate] = React.useState(edit?.receivedOn ?? edit?.expectedOn ?? todayKey());
   const [accountId, setAccountId] = React.useState<string | null>(edit?.accountId ?? lastAccount());
   const [custom, setCustom] = React.useState(Boolean(edit?.split));
+  const [showSplit, setShowSplit] = React.useState(Boolean(edit?.split));
   const [split, setSplit] = React.useState<Split>(edit?.split ?? summary.data?.rule ?? { savingsBp: 7000, fixedBp: 2000, funBp: 1000 });
   React.useEffect(() => {
     if (!custom && summary.data) setSplit(summary.data.rule);
@@ -238,7 +284,8 @@ function IncomeSheet({ open, onOpenChange, onClose, edit, receive }: SheetProps 
   const save = useAction(
     async () => {
       const body = {
-        name: name.trim(),
+        // Sin nombre: el tipo y la fecha bastan ("Sueldo 21 oct").
+        name: name.trim() || `${INCOME_TYPE_LABEL[type]} ${fmtDate(date, 'd MMM')}`,
         amountCents: cents,
         type,
         status,
@@ -262,23 +309,22 @@ function IncomeSheet({ open, onOpenChange, onClose, edit, receive }: SheetProps 
       onOpenChange={onOpenChange}
       title={edit ? 'Ingreso' : 'Nuevo ingreso'}
       onDone={() => save.mutate(undefined)}
-      doneDisabled={!name.trim() || (status === 'RECEIVED' && !cents) || (custom && sum !== 10000) || save.isPending}
+      doneDisabled={(status === 'RECEIVED' && !cents) || (custom && sum !== 10000) || save.isPending}
     >
-      <BigNumber value={amount} onChange={setAmount} unit="MXN" decimal />
-      <Segmented value={status} onChange={setStatus} options={[{ value: 'RECEIVED', label: 'Recibido' }, { value: 'PLANNED', label: 'Previsto' }]} />
-      <List>
-        <TextItem placeholder="Nombre (p. ej. Sueldo 23 oct)" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        <DateRow label={status === 'RECEIVED' ? 'Recibido el' : 'Esperado el'} value={date} onChange={setDate} />
-      </List>
+      <Segmented value={status} onChange={setStatus} options={[{ value: 'RECEIVED', label: 'Ya me llegó' }, { value: 'PLANNED', label: 'Me va a llegar' }]} />
+      <BigNumber value={amount} onChange={setAmount} prefix="$" decimal />
       <Chips value={type} onChange={setType} options={(Object.keys(INCOME_TYPE_LABEL) as IncomeType[]).map((t) => ({ value: t, label: INCOME_TYPE_LABEL[t] }))} />
-      {active.length > 0 ? (
-        <Chips value={accountValid ? accountId : null} onChange={setAccountId} options={active.map((a) => ({ value: a.id, label: a.name }))} />
-      ) : (
-        <p className="px-2 text-[15px] text-ink-2">Sin cuenta: se cuenta en tu presupuesto, pero no en tu saldo.</p>
-      )}
+      {active.length > 0 && <Chips value={accountValid ? accountId : null} onChange={setAccountId} options={active.map((a) => ({ value: a.id, label: a.name }))} />}
+      <List>
+        <TextItem placeholder="Nombre (opcional)" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+        <DateRow label={status === 'RECEIVED' ? 'Llegó el' : 'Llega el'} value={date} onChange={setDate} />
+        {status === 'RECEIVED' && (
+          <Item label="Reparto" detail={`${pct(split.savingsBp)}/${pct(split.fixedBp)}/${pct(split.funBp)}`} onClick={() => setShowSplit((v) => !v)} />
+        )}
+      </List>
 
       {/* Distribución inmediata */}
-      {status === 'RECEIVED' && (
+      {status === 'RECEIVED' && showSplit && (
         <List header="Distribución">
           {preview ? (
             <>

@@ -4,12 +4,11 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Avatar } from '@/components/avatar';
 import { HeatWord } from '@/components/portfolio';
-import { Item, List, TextBlock } from '@/components/ui/ios';
+import { BackButton, Item, List, TextBlock } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { imageToAvatarDataUrl } from '@/lib/avatar';
 import { fmtDate, fmtKg, fmtNum } from '@/lib/format';
 import { useAction, useProfile } from '@/lib/queries';
-import { BackButton } from './activity';
 import { NumberSheet, type NumberEdit } from './settings';
 
 const none = (xs: string[] | undefined, empty: string) => (xs && xs.length ? xs.join(', ') : empty);

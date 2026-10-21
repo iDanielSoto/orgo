@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
 /*
- * Estética iOS 27: fondo negro sólido como el modo oscuro del iPhone, vidrio líquido
- * del portafolio, tipografía del sistema (SF), azul de calor y amarillo puntual.
+ * Estética iOS 27: negro sólido en modo oscuro y gris claro en modo claro (según el sistema),
+ * vidrio líquido, tipografía del sistema (SF), azul de calor y amarillo puntual.
  */
 :root {
   --bg: #000000;
@@ -16,6 +16,7 @@
   --green: #30d158;
   --red: #ff6b5e;
   --sheet: rgba(28, 28, 30, 0.92);
+  --card: rgba(255, 255, 255, 0.075);
   color-scheme: dark;
 }
 
@@ -44,10 +45,12 @@
     background: var(--bg);
     -webkit-tap-highlight-color: transparent;
     text-size-adjust: 100%;
+    /* Sin el rebote de toda la página ni zoom con doble toque: se siente app, no web. */
+    overscroll-behavior: none;
+    touch-action: manipulation;
   }
   body {
     min-height: 100dvh;
-    /* Sin fondo propio: el cielo (canvas con z negativo) se pinta detrás del body. */
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 17px;
@@ -55,6 +58,7 @@
     -webkit-font-smoothing: antialiased;
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
   }
   input,
   textarea {
@@ -74,16 +78,36 @@
   }
 }
 
-/* Cielo claro (de día): texto secundario más opaco y una sombra suave para que se lea. */
-html[data-sky='light'] {
-  --ink-2: rgba(255, 255, 255, 0.9);
-  --ink-3: rgba(255, 255, 255, 0.74);
+/*
+ * Tema claro (según el sistema). Se invierten white/black de Tailwind para que los rellenos
+ * translúcidos (bg-white/[0.08], bordes, presionados) oscurezcan en vez de aclarar.
+ */
+html[data-theme='light'] {
+  --bg: #f2f2f7;
+  --ink: #0b0b0f;
+  --ink-2: rgba(60, 60, 67, 0.64);
+  --ink-3: rgba(60, 60, 67, 0.36);
+  --sep: rgba(60, 60, 67, 0.16);
+  --fill: rgba(120, 120, 128, 0.12);
+  --tint: #2f7cf6;
+  --green: #28a745;
+  --red: #e5342a;
+  --sheet: #ffffff;
+  --card: #ffffff;
+  --color-white: #000;
+  --color-black: #fff;
+  color-scheme: light;
 }
-html[data-sky='light'] body {
-  text-shadow: 0 1px 2px rgba(0, 20, 60, 0.35), 0 0 18px rgba(0, 20, 60, 0.25);
+html body {
+  background: var(--bg);
 }
 
-/* Vidrio líquido (glass-bubble del portafolio): esmerilado en Safari, con refracción en Chromium. */
+/*
+ * Vidrio líquido de iOS sobre negro, igual en Safari y Chromium (sin refracción, que Safari no
+ * soporta): relleno que se aclara hacia arriba, borde de luz más brillante arriba a la izquierda
+ * y abajo a la derecha (::before) y un brillo especular en la parte alta (::after). El
+ * desenfoque se nota cuando el contenido pasa por debajo (barra, menús, hojas).
+ */
 @layer components {
   .glass {
     position: relative;
@@ -91,27 +115,69 @@ html[data-sky='light'] body {
 }
 .glass {
   isolation: isolate;
-  background: rgba(255, 255, 255, 0.06);
-  -webkit-backdrop-filter: blur(10px) saturate(1.6);
-  backdrop-filter: blur(10px) saturate(1.6);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.045) 55%, rgba(255, 255, 255, 0.06));
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  backdrop-filter: blur(22px) saturate(1.8);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.45),
-    inset 0 -1px 1px rgba(255, 255, 255, 0.15),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-    0 10px 30px -12px rgba(0, 0, 0, 0.6);
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 8px 28px -10px rgba(0, 0, 0, 0.9);
 }
-.glass-refract .glass {
-  backdrop-filter: var(--glass-filter, none) saturate(1.5) brightness(1.04);
+.glass::before,
+.glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
 }
-/* Menús y hojas: el mismo vidrio de las burbujas (con su refracción) y un desenfoque ligero
-   para que el texto se lea sobre lo que hay detrás. */
+/* Borde de luz: un anillo de 1 px con degradado (máscara que deja sólo el contorno). */
+.glass::before {
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0.14) 28%,
+    rgba(255, 255, 255, 0.05) 55%,
+    rgba(255, 255, 255, 0.12) 78%,
+    rgba(255, 255, 255, 0.4)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+/* Brillo especular: una luz suave que cae desde arriba. */
+.glass::after {
+  background: radial-gradient(120% 70% at 30% -10%, rgba(255, 255, 255, 0.16), transparent 60%);
+}
+/* Menús, hojas y barra: más opacos para que el texto se lea sobre lo que pasa detrás. */
 .glass.glass-thick {
-  background: rgba(255, 255, 255, 0.08);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
-  backdrop-filter: blur(14px) saturate(1.6);
+  background: linear-gradient(180deg, rgba(48, 48, 52, 0.82), rgba(28, 28, 30, 0.86));
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
 }
-.glass-refract .glass.glass-thick {
-  backdrop-filter: blur(5px) var(--glass-filter, none) saturate(1.5) brightness(1.04);
+/* Vidrio claro: blanco lechoso con canto brillante y una sombra suave que lo despega del fondo. */
+html[data-theme='light'] .glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.7));
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.07),
+    0 8px 24px -12px rgba(0, 0, 0, 0.22);
+}
+html[data-theme='light'] .glass::before {
+  background: linear-gradient(135deg, #fff, rgba(255, 255, 255, 0.5) 30%, rgba(0, 0, 0, 0.05) 62%, rgba(255, 255, 255, 0.8));
+}
+html[data-theme='light'] .glass::after {
+  background: radial-gradient(120% 70% at 30% -10%, rgba(255, 255, 255, 0.75), transparent 60%);
+}
+html[data-theme='light'] .glass.glass-thick {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 16px 40px -16px rgba(0, 0, 0, 0.3);
 }
 
 .press {
@@ -153,6 +219,15 @@ html[data-sky='light'] body {
 @keyframes fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+/* Navegación como en iOS: la pantalla nueva entra por la derecha; al volver, por la izquierda. */
+@keyframes push {
+  from { opacity: 0.4; transform: translateX(32%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop {
+  from { opacity: 0.4; transform: translateX(-18%); }
+  to { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

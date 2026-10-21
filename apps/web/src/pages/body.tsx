@@ -1,7 +1,7 @@
 import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts';
 import * as React from 'react';
 import { useLog } from '@/components/forms/log';
-import { BigNumber, Capsule, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
+import { BackButton, BigNumber, Capsule, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
 import { api } from '@/lib/api';
 import { capitalize, fmtDate, fmtKg, fmtNum, fmtSignedKg } from '@/lib/format';
 import { useAction, useBodySummary, useMeasurements } from '@/lib/queries';
@@ -17,6 +17,7 @@ export function BodyPage() {
 
   return (
     <div>
+      <BackButton fallback="/salud" />
       <LargeTitle text="Cuerpo" />
 
       <div className="text-center">

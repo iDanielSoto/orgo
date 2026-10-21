@@ -77,7 +77,7 @@ export function NightFill() {
 /** Plato en tres partes (desayuno, comida, cena) que se llenan al registrarlas. */
 export function PlateFill({ done }: { done: [boolean, boolean, boolean] }) {
   const on = 'rgba(92,160,255,0.55)';
-  const off = 'rgba(255,255,255,0.06)';
+  const off = 'var(--fill)';
   const bg = `conic-gradient(from -90deg, ${done[0] ? on : off} 0 118deg, transparent 118deg 120deg, ${done[1] ? on : off} 120deg 238deg, transparent 238deg 240deg, ${done[2] ? on : off} 240deg 358deg, transparent 358deg)`;
   return (
     <span aria-hidden className="absolute inset-[14px] rounded-full" style={{ background: bg, WebkitMask: 'radial-gradient(circle, transparent 55%, #000 56%)', mask: 'radial-gradient(circle, transparent 55%, #000 56%)' }} />
@@ -92,7 +92,7 @@ export function RingFill({ pct, color }: { pct: number; color: string }) {
       aria-hidden
       className="absolute inset-[10px] rounded-full transition-[background] duration-700"
       style={{
-        background: `conic-gradient(from 0deg, ${color} 0 ${deg}deg, rgba(255,255,255,0.08) ${deg}deg 360deg)`,
+        background: `conic-gradient(from 0deg, ${color} 0 ${deg}deg, var(--fill) ${deg}deg 360deg)`,
         WebkitMask: 'radial-gradient(circle, transparent 82%, #000 83%)',
         mask: 'radial-gradient(circle, transparent 82%, #000 83%)',
       }}
