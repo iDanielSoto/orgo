@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dailyKcalGoal, portionTotals } from './nutrition';
+import { dailyKcalGoal, macroTargets, portionTotals } from './nutrition';
 
 describe('porciones con la mano', () => {
   it('suma energía y macros, con medias porciones', () => {
@@ -11,5 +11,9 @@ describe('porciones con la mano', () => {
   it('propone un déficit moderado sin bajar del basal', () => {
     expect(dailyKcalGoal(2500, 1800)).toBe(2150);
     expect(dailyKcalGoal(1900, 1750)).toBe(1750);
+  });
+
+  it('reparte la meta en macros', () => {
+    expect(macroTargets(2000, 80)).toEqual({ proteinG: 144, carbsG: 230, fatG: 56 });
   });
 });

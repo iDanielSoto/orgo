@@ -174,6 +174,15 @@ financeRouter.get('/finance/summary', async (req, res) => {
     // Para "puedes gastar hoy": lo gastado hoy se descuenta aparte del presupuesto diario.
     spentTodayCents: txs.filter((t) => t.kind === 'EXPENSE' && dateKey(t.localDate) === ctx.today).reduce((a, t) => a + t.amountCents, 0),
     recent: txs.filter((t) => dateKey(t.localDate) >= from).slice(0, 20).map(serializeTx),
+    // Para los consejos: en qué se fue más dinero este mes.
+    topCategories: [
+      ...txs
+        .filter((t) => t.kind === 'EXPENSE' && dateKey(t.localDate) >= from)
+        .reduce((m, t) => m.set(t.category?.name ?? 'Sin categoría', (m.get(t.category?.name ?? 'Sin categoría') ?? 0) + t.amountCents), new Map<string, number>()),
+    ]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, cents]) => ({ name, cents })),
     upcoming,
     projection,
     rule,

@@ -82,3 +82,14 @@ export function portionTotals(p: Partial<Portions>) {
 export function dailyKcalGoal(tdeeKcal: number, bmrKcal: number) {
   return Math.max(Math.round(bmrKcal / 50) * 50, Math.round((tdeeKcal * 0.85) / 50) * 50);
 }
+
+/**
+ * Metas de macros aproximadas para la meta de kcal: proteína 1.8 g/kg (bajar grasa cuidando el
+ * músculo), grasa 25 % de las kcal y el resto en carbohidratos.
+ */
+export function macroTargets(goalKcal: number, weightKg: number) {
+  const proteinG = Math.round(weightKg * 1.8);
+  const fatG = Math.round((goalKcal * 0.25) / 9);
+  const carbsG = Math.max(0, Math.round((goalKcal - proteinG * 4 - fatG * 9) / 4));
+  return { proteinG, carbsG, fatG };
+}
