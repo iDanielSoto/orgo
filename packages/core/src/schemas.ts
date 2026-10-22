@@ -160,6 +160,13 @@ const mealFields = {
   hasVegetables: z.boolean().default(false),
   hungerBefore: z.number().int().min(1).max(5).nullable().optional(),
   note: optionalText(500),
+  /** Porciones con la mano (en medias porciones); el servidor calcula las kcal. */
+  portions: z
+    .object(Object.fromEntries(['PROTEIN', 'CARBS', 'VEG', 'FAT'].map((k) => [k, z.number().min(0).max(10).multipleOf(0.5).default(0)])) as Record<
+      'PROTEIN' | 'CARBS' | 'VEG' | 'FAT',
+      z.ZodDefault<z.ZodNumber>
+    >)
+    .optional(),
 };
 
 export const mealCreateSchema = z.object({ id: uuidSchema, ...mealFields });

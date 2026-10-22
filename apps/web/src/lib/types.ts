@@ -243,6 +243,9 @@ export interface Meal {
   hasVegetables: boolean;
   hungerBefore: number | null;
   note: string | null;
+  /** Porciones con la mano; kcal aproximadas (null si se registró sin porciones). */
+  portions: Record<'PROTEIN' | 'CARBS' | 'VEG' | 'FAT', number>;
+  kcal: number | null;
 }
 
 export interface SleepEntry {

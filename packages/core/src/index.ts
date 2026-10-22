@@ -8,3 +8,4 @@ export * from './next-step';
 export * from './schemas';
 export * from './reminders';
 export * from './finance';
+export * from './nutrition';

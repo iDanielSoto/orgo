@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ExerciseFigure, MOVES } from '@/components/exercise-figure';
 import { useLog } from '@/components/forms/log';
 import { Capsule, Item, LargeTitle, List, Sheet } from '@/components/ui/ios';
 import { Hero } from '@/components/zone';
@@ -52,7 +53,17 @@ export function ExercisePage() {
         {routine && (
           <List>
             {routine.exercises.map((e) => (
-              <Item key={e.name} label={e.name} detail={reps(e)} onClick={() => setEx(e)} />
+              <Item
+                key={e.name}
+                label={
+                  <span className="flex items-center gap-3">
+                    <ExerciseFigure name={e.name} animate={false} className="-my-1 h-11 w-[60px] shrink-0 text-ink" />
+                    {e.name}
+                  </span>
+                }
+                detail={reps(e)}
+                onClick={() => setEx(e)}
+              />
             ))}
           </List>
         )}
@@ -93,7 +104,21 @@ export function ExercisePage() {
       <Sheet open={ex !== null} onOpenChange={(o) => !o && setEx(null)} title={ex?.name ?? ''}>
         {ex && (
           <>
-            <p className="text-center text-[40px] font-semibold tracking-[-0.03em] tabular">{reps(ex)}</p>
+            {MOVES[ex.name] && (
+              <div className="-mx-1 rounded-[26px] bg-fill px-3 pb-3 pt-4">
+                <ExerciseFigure name={ex.name} className="w-full text-ink" />
+                <p className="mt-1 flex items-center justify-center gap-2 text-[15px] text-ink-2">
+                  <span className="size-2.5 rounded-full bg-tint" />
+                  {MOVES[ex.name]!.label}
+                </p>
+              </div>
+            )}
+            <div className="text-center">
+              <p className="text-[40px] font-semibold leading-none tracking-[-0.03em] tabular">{reps(ex)}</p>
+              <p className="mt-2 text-[15px] text-ink-2">
+                {ex.perSide ? 'por lado · ' : ''}descansa {ex.restSeconds} s{ex.equipment ? ` · ${ex.equipment.toLowerCase()}` : ''}
+              </p>
+            </div>
             <ol className="space-y-4 px-1">
               {ex.instructions.map((s, i) => (
                 <li key={s} className="flex gap-4 text-[17px] leading-snug">
@@ -102,6 +127,13 @@ export function ExercisePage() {
                 </li>
               ))}
             </ol>
+            {ex.cues.length > 0 && (
+              <List>
+                {ex.cues.map((c) => (
+                  <Item key={c} label={<span className="text-[16px]">{c}</span>} />
+                ))}
+              </List>
+            )}
           </>
         )}
       </Sheet>

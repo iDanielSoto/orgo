@@ -6,11 +6,14 @@ import {
   dateKeyToUtc,
   mealCreateSchema,
   mealUpdateSchema,
+  PORTION_KINDS,
+  portionTotals,
+  type Portions,
   sleepCreateSchema,
   sleepDurationMinutes,
   sleepUpdateSchema,
 } from '@forma/core';
-import type { Meal, SleepLog } from '@prisma/client';
+import type { Meal, MealItem, SleepLog } from '@prisma/client';
 import { prisma } from '../db';
 import { uid } from '../lib/auth';
 import { HttpError, notFound, parse } from '../lib/http';
@@ -23,8 +26,17 @@ export const logsRouter = Router();
 
 // --- Comidas -------------------------------------------------------------------
 
-const serializeMeal = (m: Meal) => ({
+/** Un renglón por tipo de porción (PROTEIN, CARBS…), con sus kcal y macros ya calculadas. */
+const portionItems = (p: Partial<Portions>) =>
+  PORTION_KINDS.filter((k) => (p[k] ?? 0) > 0).map((k) => {
+    const t = portionTotals({ [k]: p[k] });
+    return { name: k, servings: p[k]!, kcal: t.kcal, proteinG: t.proteinG, carbsG: t.carbsG, fatG: t.fatG };
+  });
+
+const serializeMeal = (m: Meal & { items?: MealItem[] }) => ({
   id: m.id,
+  portions: Object.fromEntries(PORTION_KINDS.map((k) => [k, Number(m.items?.find((i) => i.name === k)?.servings ?? 0)])) as Portions,
+  kcal: m.items?.length ? Math.round(m.items.reduce((a, i) => a + Number(i.kcal ?? 0), 0)) : null,
   type: m.type,
   eatenAt: m.eatenAt.toISOString(),
   date: dateKey(m.localDate),
@@ -46,20 +58,28 @@ logsRouter.get('/meals', async (req, res) => {
   const rows = await prisma.meal.findMany({
     where: { userId, localDate: { gte: dateKeyToUtc(from), lte: dateKeyToUtc(to) } },
     orderBy: { eatenAt: 'desc' },
+    include: { items: true },
   });
   res.json(rows.map(serializeMeal));
 });
 
 logsRouter.post('/meals', async (req, res) => {
   const userId = uid(req);
-  const data = parse(mealCreateSchema, req.body);
+  const { portions, ...data } = parse(mealCreateSchema, req.body);
   const ctx = await loadContext(userId);
   const { record, created } = await createIdempotent(
     () =>
       prisma.meal.create({
-        data: { ...data, userId, eatenAt: new Date(data.eatenAt), localDate: dateKeyToUtc(localDateOf(ctx, data.eatenAt)) },
+        data: {
+          ...data,
+          userId,
+          eatenAt: new Date(data.eatenAt),
+          localDate: dateKeyToUtc(localDateOf(ctx, data.eatenAt)),
+          items: portions ? { create: portionItems(portions) } : undefined,
+        },
+        include: { items: true },
       }),
-    () => prisma.meal.findUnique({ where: { id: data.id } }),
+    () => prisma.meal.findUnique({ where: { id: data.id }, include: { items: true } }),
     userId,
   );
   res.status(created ? 201 : 200).json(serializeMeal(record));
@@ -67,7 +87,7 @@ logsRouter.post('/meals', async (req, res) => {
 
 logsRouter.patch('/meals/:id', async (req, res) => {
   const userId = uid(req);
-  const data = parse(mealUpdateSchema, req.body);
+  const { portions, ...data } = parse(mealUpdateSchema, req.body);
   const existing = await prisma.meal.findFirst({ where: { id: req.params.id, userId } });
   if (!existing) throw notFound('Comida');
   const ctx = await loadContext(userId);
@@ -76,7 +96,10 @@ logsRouter.patch('/meals/:id', async (req, res) => {
     data: {
       ...data,
       ...(data.eatenAt ? { eatenAt: new Date(data.eatenAt), localDate: dateKeyToUtc(localDateOf(ctx, data.eatenAt)) } : {}),
+      // Las porciones se reemplazan completas.
+      ...(portions ? { items: { deleteMany: {}, create: portionItems(portions) } } : {}),
     },
+    include: { items: true },
   });
   res.json(serializeMeal(updated));
 });

@@ -1,6 +1,7 @@
-import { BEVERAGE_LABEL, MEAL_LABEL, clockSleepMinutes, type MealType } from '@forma/core';
+import { BEVERAGE_LABEL, MEAL_LABEL, NO_PORTIONS, PORTION_KINDS, PORTIONS, clockSleepMinutes, portionTotals, type MealType, type PortionKind, type Portions } from '@forma/core';
 import { useQueryClient } from '@tanstack/react-query';
 import * as React from 'react';
+import { MealBadge, PortionBadge, Plate } from '@/components/food-visuals';
 import { BigNumber, Capsule, Item, List, Segmented, Sheet, Switch, TextItem, TimeItem } from '@/components/ui/ios';
 import { api, newId } from '@/lib/api';
 import { fmtDuration, fmtNum, fmtTime } from '@/lib/format';
@@ -220,29 +221,80 @@ function guessMeal(): MealType {
 function MealSheet({ open, onOpenChange, onClose, edit, type: preset, date }: SheetProps & { edit?: Meal; type?: MealType; date?: string }) {
   const [type, setType] = React.useState<MealType>(edit?.type ?? preset ?? (date ? 'LUNCH' : guessMeal()));
   const [desc, setDesc] = React.useState(edit?.description ?? '');
-  const [protein, setProtein] = React.useState(Boolean(edit?.proteinSource));
+  const [portions, setPortions] = React.useState<Portions>(edit?.portions ?? { ...NO_PORTIONS });
+  const t = portionTotals(portions);
+  const any = PORTION_KINDS.some((k) => portions[k] > 0);
+  const step = (k: PortionKind, d: number) => setPortions((p) => ({ ...p, [k]: Math.min(10, Math.max(0, p[k] + d)) }));
   const save = useAction(
     () => {
+      // Sin descripción, el plato habla por sí mismo ("Proteína 2 · Carbohidrato 1").
+      const auto = PORTION_KINDS.filter((k) => portions[k] > 0)
+        .map((k) => `${PORTIONS[k].label} ${fmtPortion(portions[k])}`)
+        .join(' · ');
       const body = {
         type,
-        description: desc.trim(),
-        // Se conserva la fuente si ya existía; si no, basta con saber que hubo proteína.
-        proteinSource: protein ? (edit?.proteinSource ?? 'Sí') : null,
+        description: desc.trim() || auto || MEAL_LABEL[type],
+        proteinSource: portions.PROTEIN > 0 ? (edit?.proteinSource ?? 'Sí') : null,
         eatenAt: edit?.eatenAt ?? atIso(date, MEAL_HOUR[type]),
         hasFruit: edit?.hasFruit ?? false,
-        hasVegetables: edit?.hasVegetables ?? false,
+        hasVegetables: portions.VEG > 0,
+        portions,
       };
       return edit ? api.patch(`/meals/${edit.id}`, body) : api.post('/meals', { id: newId(), ...body });
     },
-    { success: 'Comida guardada', onSuccess: onClose },
+    { success: any ? `Comida guardada · ~${t.kcal} kcal` : 'Comida guardada', onSuccess: onClose },
   );
   const del = useAction(() => api.del(`/meals/${edit!.id}`), { success: 'Eliminada', onSuccess: onClose });
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Comida" onDone={() => save.mutate(undefined)} doneDisabled={!desc.trim() || save.isPending}>
-      <Segmented value={type} onChange={setType} options={(Object.keys(MEAL_LABEL) as MealType[]).map((v) => ({ value: v, label: MEAL_LABEL[v] }))} />
+    <Sheet open={open} onOpenChange={onOpenChange} title="Comida" onDone={() => save.mutate(undefined)} doneDisabled={(!any && !desc.trim()) || save.isPending}>
+      <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Tipo de comida">
+        {(Object.keys(MEAL_LABEL) as MealType[]).map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={type === m} onClick={() => setType(m)} className="press flex flex-col items-center gap-1.5">
+            <MealBadge type={m} size={48} muted={type !== m} />
+            <span className={type === m ? 'text-[13px] font-semibold' : 'text-[13px] text-ink-2'}>{MEAL_LABEL[m]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-5 px-1">
+        <Plate portions={portions} size={118} />
+        <div className="min-w-0">
+          <p className="text-[44px] font-semibold leading-none tracking-[-0.04em] tabular">
+            <span className="text-ink-3">~</span>
+            {t.kcal}
+          </p>
+          <p className="mt-1 text-[15px] text-ink-2">kcal aprox.</p>
+          {any && (
+            <p className="mt-2 text-[13px] text-ink-2 tabular">
+              P {t.proteinG} g · C {t.carbsG} g · G {t.fatG} g
+            </p>
+          )}
+        </div>
+      </div>
+
       <List>
-        <TextItem autoFocus placeholder="¿Qué comiste?" value={desc} maxLength={300} onChange={(e) => setDesc(e.target.value)} />
-        <Switch label="Con proteína" checked={protein} onChange={setProtein} />
+        {PORTION_KINDS.map((k) => (
+          <div key={k} className="flex min-h-[64px] items-center gap-3 px-4 py-2">
+            <PortionBadge kind={k} size={40} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px]">{PORTIONS[k].label}</span>
+              <span className="block text-[13px] text-ink-3">
+                1 {PORTIONS[k].hand} ≈ {PORTIONS[k].kcal} kcal
+              </span>
+            </span>
+            <button type="button" aria-label={`Menos ${PORTIONS[k].label}`} onClick={() => step(k, -0.5)} disabled={!portions[k]} className="press grid size-9 place-items-center rounded-full bg-fill text-[22px] disabled:opacity-30">
+              −
+            </button>
+            <span className="w-8 text-center text-[19px] font-semibold tabular">{fmtPortion(portions[k])}</span>
+            <button type="button" aria-label={`Más ${PORTIONS[k].label}`} onClick={() => step(k, 0.5)} className="press grid size-9 place-items-center rounded-full bg-fill text-[22px]">
+              +
+            </button>
+          </div>
+        ))}
+      </List>
+
+      <List>
+        <TextItem placeholder="¿Qué comiste? (opcional)" value={desc} maxLength={300} onChange={(e) => setDesc(e.target.value)} />
       </List>
       {edit && (
         <List>
@@ -252,6 +304,9 @@ function MealSheet({ open, onOpenChange, onClose, edit, type: preset, date }: Sh
     </Sheet>
   );
 }
+
+/** 1.5 → "1½", 0.5 → "½". */
+export const fmtPortion = (n: number) => (n === 0 ? '0' : `${Math.floor(n) || ''}${n % 1 ? '½' : ''}`);
 
 // --- Actividad ----------------------------------------------------------------------
 
